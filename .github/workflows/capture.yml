@@ -22,7 +22,7 @@ jobs:
   run:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # para commitar no próprio repo
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -30,7 +30,9 @@ jobs:
         with:
           node-version: "20"
 
-      - run: npm ci
+      # ⬇️ trocado de 'npm ci' para 'npm install'
+      - name: Install deps
+        run: npm install
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
