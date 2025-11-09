@@ -1,0 +1,57 @@
+name: Capture Vaidepromo
+
+on:
+  workflow_dispatch:
+    inputs:
+      origin:
+        description: IATA origem (ex: GYN)
+        required: false
+        default: GYN
+      dest:
+        description: IATA destino (ex: CAC)
+        required: false
+        default: CAC
+      date:
+        description: Data (AAAA-MM-DD)
+        required: false
+        default: 2025-11-30
+  schedule:
+    - cron: "0 9 * * *"   # opcional: roda todo dia às 09:00 UTC
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # para commitar no próprio repo
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Capture
+        env:
+          ORIGIN: ${{ github.event.inputs.origin }}
+          DEST:   ${{ github.event.inputs.dest }}
+          DATE:   ${{ github.event.inputs.date }}
+          OUTPUT_DIR: data
+          DEBUG: "1"
+        run: node capture.js
+
+      - name: Commit & push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then
+            echo "Nenhum arquivo novo."
+          else
+            git commit -m "capture: ${ORIGIN:-GYN}-${DEST:-CAC} ${DATE:-2025-11-30}"
+            git push
+          fi
