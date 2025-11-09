@@ -4,19 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       origin:
-        description: IATA origem (ex: GYN)
+        description: "IATA origem (ex: GYN)"
         required: false
         default: GYN
       dest:
-        description: IATA destino (ex: CAC)
+        description: "IATA destino (ex: CAC)"
         required: false
         default: CAC
       date:
-        description: Data (AAAA-MM-DD)
+        description: "Data (AAAA-MM-DD)"
         required: false
         default: 2025-11-30
-  schedule:
-    - cron: "0 9 * * *"   # opcional: roda todo dia às 09:00 UTC
 
 jobs:
   run:
@@ -30,7 +28,6 @@ jobs:
         with:
           node-version: "20"
 
-      # ⬇️ trocado de 'npm ci' para 'npm install'
       - name: Install deps
         run: npm install
 
