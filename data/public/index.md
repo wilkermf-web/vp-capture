@@ -1,7 +1,16 @@
 # Índice público de capturas
 
-Gerado em 2025-11-10T03:31:38.305Z
+Gerado em 2025-11-10T03:52:17.016Z
 
+
+## 2025-11-26 (GYN-CAC)
+
+- stamp: `2025-11-10T03-52-09-550Z`
+  - [results.csv](https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-26_GYN-CAC/2025-11-10T03-52-09-550Z/results.csv)
+  - [results.json](https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-26_GYN-CAC/2025-11-10T03-52-09-550Z/results.json)
+  - [screenshot](https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-26_GYN-CAC/2025-11-10T03-52-09-550Z/screenshot.png)
+  - [page.html](https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-26_GYN-CAC/2025-11-10T03-52-09-550Z/page.html)
+  - [meta.json](https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-26_GYN-CAC/2025-11-10T03-52-09-550Z/meta.json)
 
 ## 2025-11-27 (GYN-CAC)
 
