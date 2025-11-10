@@ -15,6 +15,9 @@ on:
         description: "Data (AAAA-MM-DD)"
         required: false
         default: 2025-11-30
+  # Se quiser agendar diário, descomente:
+  # schedule:
+  #   - cron: "0 9 * * *"  # 09:00 UTC todo dia
 
 jobs:
   run:
@@ -43,6 +46,31 @@ jobs:
           DEBUG: "1"
         run: node capture.js
 
+      - name: Publish stable "latest"
+        env:
+          ORIGIN: ${{ github.event.inputs.origin }}
+          DEST:   ${{ github.event.inputs.dest }}
+          DATE:   ${{ github.event.inputs.date }}
+        run: |
+          set -e
+          ORIGIN="${ORIGIN:-GYN}"
+          DEST="${DEST:-CAC}"
+          DATE="${DATE:-2025-11-30}"
+          ROUTE="${ORIGIN}-${DEST}"
+          BASE="data/${DATE}_${ROUTE}"
+          if [ ! -d "$BASE" ]; then
+            echo "Base '$BASE' não existe (nenhum run gerou dados)"; exit 0
+          fi
+          # Pega a pasta de timestamp mais recente (ordenada alfabeticamente)
+          STAMP="$(ls -1 "$BASE" | tail -n1)"
+          PUB="data/public/${ROUTE}/latest"
+          mkdir -p "$PUB"
+          # Publica os artefatos "estáveis"
+          cp -f "$BASE/$STAMP/results.csv"  "$PUB/results.csv"  || true
+          cp -f "$BASE/$STAMP/results.json" "$PUB/results.json" || true
+          # Manifesto para saber de qual run veio
+          echo "{\"date\":\"$DATE\",\"route\":\"$ROUTE\",\"stamp\":\"$STAMP\"}" > "$PUB/manifest.json"
+
       - name: Commit & push
         run: |
           git config user.name  "github-actions[bot]"
@@ -51,6 +79,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "Nenhum arquivo novo."
           else
-            git commit -m "capture: ${ORIGIN:-GYN}-${DEST:-CAC} ${DATE:-2025-11-30}"
+            git commit -m "capture: atualizar dados + publish latest"
             git push
           fi
