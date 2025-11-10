@@ -14,18 +14,14 @@ on:
       date:
         description: "Data (AAAA-MM-DD)"
         required: true
-  # Para executar todo dia automaticamente (opcional), remova o comentário abaixo:
+  # Para rodar todo dia automaticamente (opcional):
   # schedule:
-  #   - cron: "9 9 * * *"   # 09:09 UTC diário
+  #   - cron: "9 9 * * *"
 
 permissions:
   contents: write
   pages: write
   id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: false
 
 jobs:
   capture-and-publish:
@@ -34,7 +30,6 @@ jobs:
 
     steps:
       - name: Checkout
-      # pega o repositório inteiro (precisa para commitar data/)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -43,14 +38,22 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
+          # ⚠️ Sem cache porque não há package-lock.json no repo
 
       - name: Install deps + Playwright
         run: |
-          npm ci --ignore-scripts --no-audit --no-fund || npm i
+          npm i --no-audit --no-fund
           npx playwright install --with-deps chromium
 
-      # 1) CAPTURA (usa scripts/capture.js)
+      - name: Debug workspace
+        run: |
+          node -v
+          npm -v
+          echo "Conteúdo do repo:"
+          ls -la
+          echo "package.json:"
+          cat package.json
+
       - name: Capture page (Vaidepromo)
         env:
           ORIGIN: ${{ inputs.origin || 'GYN' }}
@@ -59,11 +62,9 @@ jobs:
           DEBUG:  "1"
         run: node scripts/capture.js
 
-      # 2) RECONSTRÓI O ÍNDICE PÚBLICO (data/public e /latest)
       - name: Build public index
         run: node scripts/build-index.js
 
-      # 3) COMMITA OS ARQUIVOS GERADOS
       - name: Commit & push data
         run: |
           set -e
@@ -73,7 +74,6 @@ jobs:
           git commit -m "capture: ${DATE:-manual} ${ORIGIN:-GYN}-${DEST:-CAC}" || echo "Nada para commitar"
           git push
 
-      # 4) PUBLICA NO GITHUB PAGES
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
