@@ -1,33 +1,59 @@
-# .github/workflows/publish-index.yml
-name: Publish Public Index
+name: Capture Vaidepromo
 
 on:
-  workflow_run:
-    workflows: ["Capture Vaidepromo"]
-    types: [completed]
+  workflow_dispatch:
+    inputs:
+      origin:
+        description: IATA origem (ex: GYN)
+        required: false
+        default: GYN
+      dest:
+        description: IATA destino (ex: CAC)
+        required: false
+        default: CAC
+      date:
+        description: Data (YYYY-MM-DD)
+        required: true
 
 permissions:
   contents: write
 
 jobs:
-  build-index:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+  run:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          ref: main
-      - uses: actions/setup-node@v4
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          node-version: "20"
-      - run: node indexer.js
-      - run: |
+          node-version: '20'
+
+      - name: Install deps
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund || npm i
+          npx playwright install --with-deps chromium
+
+      - name: Capture page
+        env:
+          ORIGIN: ${{ inputs.origin || 'GYN' }}
+          DEST:   ${{ inputs.dest   || 'CAC' }}
+          DATE:   ${{ inputs.date   }}
+        run: node scripts/capture.js
+
+      - name: Build public index (latest + index.json)
+        run: node scripts/build-index.js
+
+      - name: Commit & push
+        run: |
+          set -e
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/public/index.json data/public/index.md
-          if git diff --cached --quiet; then
-            echo "Nada novo."
-          else
-            git commit -m "index: atualizar após captura"
-            git push
-          fi
+          git add -A
+          git commit -m "capture: ${GITHUB_SHA::7} ${{ inputs.date }} ${{ inputs.origin || 'GYN' }}-${{ inputs.dest || 'CAC' }}" || echo "no changes"
+          git push
