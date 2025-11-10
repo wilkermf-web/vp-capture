@@ -3,55 +3,62 @@ name: Capture Vaidepromo
 on:
   workflow_dispatch:
     inputs:
-      origin:
-        description: "IATA origem (ex: GYN)"
-        required: false
-        default: "GYN"
-      dest:
-        description: "IATA destino (ex: CAC)"
-        required: false
-        default: "CAC"
-      date:
-        description: "Data (AAAA-MM-DD)"
-        required: false
-        default: "2025-11-30"
-  # Se quiser rodar todo dia às 09:00 UTC, descomente:
-  # schedule:
-  #   - cron: "0 9 * * *"
+      origin:  { description: "IATA origem (ex: GYN)", required: false, default: GYN }
+      dest:    { description: "IATA destino (ex: CAC)", required: false, default: CAC }
+      date:    { description: "Data (AAAA-MM-DD)", required: false, default: "2025-11-30" }
+  schedule:
+    - cron: "9 9 * * *"  # opcional
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
-  capture-and-commit:
+  capture-and-publish:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: Install deps
-        run: npm install --no-audit --no-fund
-
-      - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+      - name: Install deps + Playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
 
       - name: Capture page (Vaidepromo)
         env:
-          ORIGIN: ${{ github.event.inputs.origin || 'GYN' }}
-          DEST:   ${{ github.event.inputs.dest   || 'CAC' }}
-          DATE:   ${{ github.event.inputs.date   || '2025-11-30' }}
-        run: npm run capture
+          ORIGIN: ${{ github.event.inputs.origin }}
+          DEST:   ${{ github.event.inputs.dest }}
+          DATE:   ${{ github.event.inputs.date }}
+          DEBUG: "0"
+          OUTPUT_DIR: data
+        run: node scripts/capture.js
 
-      - name: Commit & push
+      # 📄 OCR — instala Tesseract + bibliotecas Py e roda scripts/ocr_prices.py
+      - name: Install Tesseract (pt-BR) + Python libs
         run: |
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr tesseract-ocr-por
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pillow pytesseract
+      - name: Run OCR over screenshots
+        run: python3 scripts/ocr_prices.py
+
+      - name: Build public index (opcional, se você usa)
+        run: node scripts/build-index.js
+
+      - name: Commit & push data
+        run: |
           git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "capture: ${{ github.event.inputs.date || '2025-11-30' }} ${{ github.event.inputs.origin || 'GYN' }}->${{ github.event.inputs.dest || 'CAC' }}"
+          git commit -m "capture: dados atualizados + OCR" || echo "Nada a commitar."
           git push
