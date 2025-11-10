@@ -1,7 +1,20 @@
 # Índice público de capturas
 
-Gerado em 2025-11-10T14:33:13.278Z
+Gerado em 2025-11-10T14:49:33.243Z
 
+
+## 2025-11-26 (GYN-CAC)
+
+- stamp: `2025-11-10T14-49-20-191Z`
+  - [results.csv • Pages](https://wilkermf-web.github.io/vp-capture/data/2025-11-26_GYN-CAC/2025-11-10T14-49-20-191Z/results.csv)
+  - [results.csv • CDN](https://cdn.jsdelivr.net/gh/wilkermf-web/vp-capture@main/data/2025-11-26_GYN-CAC/2025-11-10T14-49-20-191Z/results.csv)
+  - [results.csv • RAW](https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-26_GYN-CAC/2025-11-10T14-49-20-191Z/results.csv)
+  - [results.json • Pages](https://wilkermf-web.github.io/vp-capture/data/2025-11-26_GYN-CAC/2025-11-10T14-49-20-191Z/results.json)
+  - [results.json • CDN](https://cdn.jsdelivr.net/gh/wilkermf-web/vp-capture@main/data/2025-11-26_GYN-CAC/2025-11-10T14-49-20-191Z/results.json)
+  - [results.json • RAW](https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-26_GYN-CAC/2025-11-10T14-49-20-191Z/results.json)
+  - [screenshot • Pages](https://wilkermf-web.github.io/vp-capture/data/2025-11-26_GYN-CAC/2025-11-10T14-49-20-191Z/screenshot.png)
+  - [page.html • Pages](https://wilkermf-web.github.io/vp-capture/data/2025-11-26_GYN-CAC/2025-11-10T14-49-20-191Z/page.html)
+  - [meta.json • Pages](https://wilkermf-web.github.io/vp-capture/data/2025-11-26_GYN-CAC/2025-11-10T14-49-20-191Z/meta.json)
 
 ## 2025-11-27 (GYN-CAC)
 
