@@ -1,0 +1,78 @@
+{
+  "url": "https://www.vaidepromo.com.br/passagens-aereas/pesquisa/GYNCAC251127/1/0/0/Y/",
+  "origin": "GYN",
+  "destination": "CAC",
+  "date": "2025-11-27",
+  "results": [
+    {
+      "airline": "Azul",
+      "price_brl": 834.83,
+      "price_label": "R$ 834,83",
+      "departure": "06:00",
+      "arrival": "11:59"
+    },
+    {
+      "airline": "GOL",
+      "price_brl": 834.83,
+      "price_label": "R$ 834,83",
+      "departure": "11:40",
+      "arrival": "18:10"
+    },
+    {
+      "airline": "GOL",
+      "price_brl": 1068.98,
+      "price_label": "R$ 1.068,98",
+      "departure": "11:40",
+      "arrival": "18:10"
+    },
+    {
+      "airline": "GOL",
+      "price_brl": 1157.79,
+      "price_label": "R$ 1.157,79",
+      "departure": "11:40",
+      "arrival": "18:10"
+    },
+    {
+      "airline": "GOL",
+      "price_brl": 1180.97,
+      "price_label": "R$ 1.180,97",
+      "departure": "11:40",
+      "arrival": "18:10"
+    },
+    {
+      "airline": "GOL",
+      "price_brl": 1263.9,
+      "price_label": "R$ 1.263,90",
+      "departure": "11:40",
+      "arrival": "18:10"
+    },
+    {
+      "airline": "GOL",
+      "price_brl": 1265.11,
+      "price_label": "R$ 1.265,11",
+      "departure": "11:40",
+      "arrival": "18:10"
+    },
+    {
+      "airline": "GOL",
+      "price_brl": 1277.91,
+      "price_label": "R$ 1.277,91",
+      "departure": "11:40",
+      "arrival": "18:10"
+    },
+    {
+      "airline": "GOL",
+      "price_brl": 1307.93,
+      "price_label": "R$ 1.307,93",
+      "departure": "11:40",
+      "arrival": "18:10"
+    },
+    {
+      "airline": "GOL",
+      "price_brl": 1373.41,
+      "price_label": "R$ 1.373,41",
+      "departure": "11:40",
+      "arrival": "18:10"
+    }
+  ]
+}
