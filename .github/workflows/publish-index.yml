@@ -1,0 +1,36 @@
+name: Publish Public Index
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - 'data/**'
+      - 'indexer.js'
+      - '.github/workflows/publish-index.yml'
+
+jobs:
+  build-index:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run indexer
+        run: node indexer.js
+
+      - name: Commit & push index
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/public/index.json data/public/index.md
+          if git diff --cached --quiet; then
+            echo "Nada novo."
+          else
+            git commit -m "index: publicar/atualizar índice público"
+            git push
+          fi
