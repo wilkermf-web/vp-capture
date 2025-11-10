@@ -15,9 +15,9 @@ on:
         description: "Data (AAAA-MM-DD)"
         required: false
         default: 2025-11-30
-  # Se quiser agendar diário, descomente:
+  # Se quiser rodar automático todo dia, descomente:
   # schedule:
-  #   - cron: "0 9 * * *"  # 09:00 UTC todo dia
+  #   - cron: "0 9 * * *"  # 09:00 UTC
 
 permissions:
   contents: write
@@ -41,6 +41,7 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
+      # 1) CAPTURA (usa seu capture.js atual)
       - name: Capture
         env:
           ORIGIN: ${{ github.event.inputs.origin }}
@@ -50,6 +51,7 @@ jobs:
           DEBUG: "1"
         run: node capture.js
 
+      # 2) PUBLICA O "LATEST" ESTÁVEL DA ROTA
       - name: Publish stable "latest"
         env:
           ORIGIN: ${{ github.event.inputs.origin }}
@@ -65,20 +67,27 @@ jobs:
           if [ ! -d "$BASE" ]; then
             echo "Base '$BASE' não existe (nenhum run gerou dados)"; exit 0
           fi
+          # pega a pasta de timestamp mais recente
           STAMP="$(ls -1 "$BASE" | tail -n1)"
           PUB="data/public/${ROUTE}/latest"
           mkdir -p "$PUB"
+
+          # publica artefatos principais
           cp -f "$BASE/$STAMP/results.csv"  "$PUB/results.csv"  || true
           cp -f "$BASE/$STAMP/results.json" "$PUB/results.json" || true
+          cp -f "$BASE/$STAMP/screenshot.png" "$PUB/screenshot.png" || true
+
+          # manifesto informativo
           echo "{\"date\":\"$DATE\",\"route\":\"$ROUTE\",\"stamp\":\"$STAMP\"}" > "$PUB/manifest.json"
 
-      # ⬇️ NOVO: reconstrói o índice público imediatamente
+      # 3) RECONSTRÓI O ÍNDICE PÚBLICO (lista tudo que há em data/*/*)
       - name: Build public index
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
         run: node indexer.js
 
+      # 4) COMMIT ÚNICO (dados + latest + índice)
       - name: Commit & push (dados + latest + index)
         run: |
           git config user.name  "github-actions[bot]"
