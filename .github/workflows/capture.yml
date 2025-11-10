@@ -6,95 +6,52 @@ on:
       origin:
         description: "IATA origem (ex: GYN)"
         required: false
-        default: GYN
+        default: "GYN"
       dest:
         description: "IATA destino (ex: CAC)"
         required: false
-        default: CAC
+        default: "CAC"
       date:
         description: "Data (AAAA-MM-DD)"
-        required: true
-  # Para rodar todo dia automaticamente (opcional):
+        required: false
+        default: "2025-11-30"
+  # Se quiser rodar todo dia às 09:00 UTC, descomente:
   # schedule:
-  #   - cron: "9 9 * * *"
+  #   - cron: "0 9 * * *"
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 jobs:
-  capture-and-publish:
+  capture-and-commit:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          # ⚠️ Sem cache porque não há package-lock.json no repo
 
-      - name: Install deps + Playwright
-        run: |
-          npm i --no-audit --no-fund
-          npx playwright install --with-deps chromium
+      - name: Install deps
+        run: npm install --no-audit --no-fund
 
-      - name: Debug workspace
-        run: |
-          node -v
-          npm -v
-          echo "Conteúdo do repo:"
-          ls -la
-          echo "package.json:"
-          cat package.json
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Capture page (Vaidepromo)
         env:
-          ORIGIN: ${{ inputs.origin || 'GYN' }}
-          DEST:   ${{ inputs.dest   || 'CAC' }}
-          DATE:   ${{ inputs.date   }}
-          DEBUG:  "1"
-        run: node scripts/capture.js
+          ORIGIN: ${{ github.event.inputs.origin || 'GYN' }}
+          DEST:   ${{ github.event.inputs.dest   || 'CAC' }}
+          DATE:   ${{ github.event.inputs.date   || '2025-11-30' }}
+        run: npm run capture
 
-      - name: Build public index
-        run: node scripts/build-index.js
-
-      - name: Commit & push data
+      - name: Commit & push
         run: |
-          set -e
-          git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name  "github-actions[bot]"
           git add -A
-          git commit -m "capture: ${DATE:-manual} ${ORIGIN:-GYN}-${DEST:-CAC}" || echo "Nada para commitar"
+          git commit -m "capture: ${{ github.event.inputs.date || '2025-11-30' }} ${{ github.event.inputs.origin || 'GYN' }}->${{ github.event.inputs.dest || 'CAC' }}"
           git push
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Prepare site bundle (gh-pages)
-        run: |
-          set -e
-          rm -rf site
-          mkdir -p site/data/public
-          cp -R data/public/* site/data/public/ || true
-          cat > site/index.html <<'HTML'
-          <!doctype html><meta charset="utf-8">
-          <title>vp-capture</title>
-          <h1>Índice público</h1>
-          <p><a href="data/public/index.json">data/public/index.json</a></p>
-          <p><a href="data/public/index.md">data/public/index.md</a></p>
-          HTML
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-
-      - name: Deploy to GitHub Pages
-        uses: actions/deploy-pages@v4
