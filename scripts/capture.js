@@ -1,128 +1,111 @@
 // scripts/capture.js
-import { chromium } from 'playwright';
 import fs from 'fs/promises';
 import path from 'path';
-import { ymdCompact, safeStamp, ensureDir, writeFile, toCSV } from './utils.js';
+import { chromium } from 'playwright';
 
-// Entradas
-const ORIGIN = (process.env.ORIGIN || 'GYN').toUpperCase();
-const DEST   = (process.env.DEST   || 'CAC').toUpperCase();
-const DATE   = process.env.DATE;
-
-if (!DATE || !/^\d{4}-\d{2}-\d{2}$/.test(DATE)) {
-  console.error('DATE inválida. Use YYYY-MM-DD.');
-  process.exit(1);
+function yymmdd(isoDate) {
+  // isoDate: "AAAA-MM-DD"
+  const [Y, M, D] = isoDate.split('-');
+  const YY = (Number(Y) % 100).toString().padStart(2, '0');
+  return `${YY}${M}${D}`; // ex: 2025-11-30 -> "251130"
 }
 
-// URL direta (uso autorizado)
-const ymd = ymdCompact(DATE);
-const SEARCH_URL = `https://www.vaidepromo.com.br/passagens-aereas/pesquisa/${ORIGIN}${DEST}${ymd}/1/0/0/Y/`;
-
-// Pastas de saída
-const routeSlug = `${DATE}_${ORIGIN}-${DEST}`;
-const stamp = safeStamp();
-const outDir = path.join('data', routeSlug, stamp);
-const out = (name) => path.join(outDir, name);
-
-// Leitor do HTML para extrair preços “Preço por adulto”
-function parseOffersFromHTML(html) {
-  const chunks = html.split(/Preço por adulto/i);
-  const offers = [];
-  for (let i = 0; i < chunks.length - 1; i++) {
-    const left = chunks[i].slice(-1200);
-    const right = chunks[i + 1].slice(0, 1200);
-    const around = left + ' ' + right;
-
-    // Preço
-    const mPrice = right.match(/R\$\s*\d{1,3}(?:\.\d{3})*,\d{2}/);
-    if (!mPrice) continue;
-    const priceNum = Number(
-      mPrice[0].replace(/[^\d,]/g, '').replace(/\./g, '').replace(',', '.')
-    );
-
-    // Companhia (heurística simples)
-    let airline = null, iata = null;
-    if (/(Azul)/i.test(around))  { airline = 'Azul';  iata = 'AD'; }
-    if (/(GOL)/i.test(around))   { airline = 'GOL';   iata = 'G3'; }
-    if (/(LATAM)/i.test(around)) { airline = 'LATAM'; iata = 'LA'; }
-
-    // Horários (pega os dois primeiros)
-    const times = around.match(/\b\d{2}:\d{2}\b/g) || [];
-    const dep = times[0] || '';
-    const arr = times[1] || '';
-
-    // Paradas
-    let stops = '';
-    if (/Direto/i.test(around)) stops = 'Direto';
-    const mStops = around.match(/(\d+)\s+parad[ao]s?/i);
-    if (mStops) stops = `${mStops[1]} parada${mStops[1] === '1' ? '' : 's'}`;
-
-    offers.push({ airline, iata, price_brl: priceNum, stops, departure: dep, arrival: arr });
-  }
-
-  // Dedupe + ordena por preço
-  const seen = new Set();
-  return offers.filter(o => {
-    const k = `${o.airline}|${o.iata}|${o.price_brl}|${o.stops}|${o.departure}|${o.arrival}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  }).sort((a,b) => a.price_brl - b.price_brl);
+function buildVaidepromoUrl(origin, dest, isoDate) {
+  const route = `${origin}${dest}${yymmdd(isoDate)}`;
+  return `https://www.vaidepromo.com.br/passagens-aereas/pesquisa/${route}/1/0/0/Y/`;
 }
 
-(async () => {
+function stamp() {
+  return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
+async function ensureDir(dir) {
+  await fs.mkdir(dir, { recursive: true });
+}
+
+async function main() {
+  // Lê parâmetros das variáveis de ambiente (definidas no GitHub Actions)
+  const ORIGIN = (process.env.ORIGIN || 'GYN').toUpperCase();
+  const DEST   = (process.env.DEST   || 'CAC').toUpperCase();
+  const DATE   = process.env.DATE || '2025-11-30'; // AAAA-MM-DD
+
+  const url = buildVaidepromoUrl(ORIGIN, DEST, DATE);
+  const outDir = path.join('data', `${DATE}_${ORIGIN}-${DEST}`, stamp());
+
+  console.log('[INFO] URL:', url);
+  console.log('[INFO] Pasta de saída:', outDir);
   await ensureDir(outDir);
 
   const browser = await chromium.launch({
     headless: true,
     args: ['--no-sandbox', '--disable-dev-shm-usage']
   });
-
-  const ctx = await browser.newContext({
-    locale: 'pt-BR',
-    timezoneId: 'America/Sao_Paulo',
-    viewport: { width: 1280, height: 1600 },
-    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36'
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari/537.36'
   });
+  const page = await context.newPage();
 
-  const page = await ctx.newPage();
+  try {
+    // Abre a página e espera ficar "parada" (sem novas requisições)
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
 
-  const net = [];
-  page.on('response', r => {
-    try { net.push({ url: r.url(), status: r.status() }); } catch {}
-  });
+    // Aceita cookies se existir (não falha se não existir)
+    try {
+      const cookieButton = page.locator('button:has-text("Aceitar")');
+      if (await cookieButton.first().isVisible({ timeout: 3000 })) {
+        await cookieButton.first().click({ timeout: 3000 });
+      }
+    } catch {}
 
-  // Abre a busca
-  await page.goto(SEARCH_URL, { waitUntil: 'domcontentloaded', timeout: 90_000 });
+    // Espera elementos típicos da lista carregarem (ajuste se mudar)
+    // Aqui usamos uma espera “elástica”: se não achar, seguimos só com o print.
+    try {
+      await page.waitForLoadState('networkidle', { timeout: 60000 });
+    } catch {}
 
-  // Rola para forçar carregamento dos cards
-  for (let i = 0; i < 14; i++) {
-    await page.keyboard.press('PageDown');
-    await page.waitForTimeout(350);
+    // Dá scroll até o fim para garantir cards renderizados
+    try {
+      await page.evaluate(async () => {
+        await new Promise(r => {
+          let y = 0;
+          const step = () => {
+            const max = document.body.scrollHeight;
+            window.scrollTo(0, y);
+            y += 800;
+            if (y < max) requestAnimationFrame(step);
+            else setTimeout(r, 800);
+          };
+          step();
+        });
+      });
+    } catch {}
+
+    // Salva HTML bruto
+    const html = await page.content();
+    await fs.writeFile(path.join(outDir, 'page.html'), html, 'utf8');
+
+    // Screenshot full page
+    await page.screenshot({ path: path.join(outDir, 'screenshot.png'), fullPage: true });
+
+    // Metadados
+    const meta = {
+      origin: ORIGIN,
+      destination: DEST,
+      date: DATE,
+      url,
+      captured_at: new Date().toISOString()
+    };
+    await fs.writeFile(path.join(outDir, 'meta.json'), JSON.stringify(meta, null, 2), 'utf8');
+
+    console.log('[OK] Captura finalizada.');
+  } finally {
+    await context.close();
+    await browser.close();
   }
-  await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(()=>{});
+}
 
-  // Salva brutos
-  await writeFile(out('page.html'), await page.content());
-  await page.screenshot({ path: out('screenshot.png'), fullPage: true });
-  await writeFile(out('network.json'), JSON.stringify(net, null, 2));
-
-  // Extrai um CSV simples (opcional, mas útil)
-  const html = await fs.readFile(out('page.html'), 'utf8');
-  const offers = parseOffersFromHTML(html);
-  const header = ['company','iata','price_brl','stops','departure','arrival'];
-  const rows = [header, ...offers.map(o => [
-    o.airline||'', o.iata||'', o.price_brl?.toFixed(2)||'',
-    o.stops||'', o.departure||'', o.arrival||''
-  ])];
-  await writeFile(out('results.csv'), toCSV(rows));
-  await writeFile(out('results.json'), JSON.stringify(offers, null, 2));
-
-  // Metadados
-  await writeFile(out('meta.json'), JSON.stringify({
-    origin: ORIGIN, dest: DEST, date: DATE, url: SEARCH_URL, stamp, count: offers.length
-  }, null, 2));
-
-  await browser.close();
-  console.log(`OK: ${offers.length} ofertas → ${outDir}`);
-})();
+main().catch(err => {
+  console.error('[ERRO] Capture falhou:', err);
+  process.exit(1);
+});
