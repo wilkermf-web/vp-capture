@@ -1,50 +1,43 @@
-// utils.js (ESM)
-import fs from 'fs';
-import path from 'path';
+import fs from "fs";
+import path from "path";
 
-export function ensureDir(dir) {
-  fs.mkdirSync(dir, { recursive: true });
+export function ensureDir(p) {
+  fs.mkdirSync(p, { recursive: true });
 }
 
-export function writeJSON(fp, data) {
-  fs.writeFileSync(fp, JSON.stringify(data, null, 2), 'utf8');
+export function parseBRL(str) {
+  if (!str) return NaN;
+  // remove tudo que não for dígito, vírgula, ponto ou sinal
+  const clean = str.replace(/[^\d,.\-]/g, "");
+  // remove separador de milhar (ponto) e troca vírgula por ponto
+  const norm = clean.replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(",", ".");
+  return Number(norm);
 }
 
-export function writeText(fp, text) {
-  fs.writeFileSync(fp, text, 'utf8');
+export function writeCSV(csvPath, rows) {
+  const csv = rows
+    .map((r) =>
+      r
+        .map((v) => {
+          const s = v === null || v === undefined ? "" : String(v);
+          // escapa campos com vírgula, aspas ou quebra de linha
+          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        })
+        .join(","),
+    )
+    .join("\n") + "\n";
+  fs.writeFileSync(csvPath, csv);
 }
 
-export function parseBRL(text) {
-  if (!text) return null;
-  const t = String(text)
-    .replace(/\s+/g, ' ')
-    .replace(/R\$\s*/i, '')
-    .replace(/\./g, '')   // remove separador de milhar
-    .replace(',', '.');   // vírgula -> ponto
-  const n = Number.parseFloat(t);
-  return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
+export function stampNow() {
+  const d = new Date();
+  // 2025-11-10T23-41-25-411Z
+  return d.toISOString().replace(/:/g, "-").replace(/\./, "-");
 }
 
-export async function autoScroll(page, { step = 800, idleMs = 600, max = 30 } = {}) {
-  let lastY = -1;
-  for (let i = 0; i < max; i++) {
-    const y = await page.evaluate(s => {
-      window.scrollBy(0, s);
-      return window.scrollY;
-    }, step);
-    if (y === lastY) break;
-    lastY = y;
-    await page.waitForTimeout(idleMs);
-  }
-  // volta ao topo para evitar lazy-hiding
-  await page.evaluate(() => window.scrollTo(0, 0));
-}
-
-export function toCSV(rows, headers) {
-  const esc = v =>
-    String(v ?? '')
-      .replace(/"/g, '""');
-  const head = headers.map(h => `"${esc(h)}"`).join(';');
-  const body = rows.map(r => headers.map(h => `"${esc(r[h])}"`).join(';')).join('\n');
-  return head + '\n' + body + '\n';
+export function outPaths(baseDataDir, date, route) {
+  const stamp = stampNow();
+  const folder = path.join(baseDataDir, `${date}_${route}`, stamp);
+  ensureDir(folder);
+  return { folder, stamp };
 }
