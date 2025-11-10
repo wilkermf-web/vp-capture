@@ -19,15 +19,19 @@ on:
   # schedule:
   #   - cron: "0 9 * * *"  # 09:00 UTC todo dia
 
+permissions:
+  contents: write
+
 jobs:
   run:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
 
@@ -61,17 +65,21 @@ jobs:
           if [ ! -d "$BASE" ]; then
             echo "Base '$BASE' não existe (nenhum run gerou dados)"; exit 0
           fi
-          # Pega a pasta de timestamp mais recente (ordenada alfabeticamente)
           STAMP="$(ls -1 "$BASE" | tail -n1)"
           PUB="data/public/${ROUTE}/latest"
           mkdir -p "$PUB"
-          # Publica os artefatos "estáveis"
           cp -f "$BASE/$STAMP/results.csv"  "$PUB/results.csv"  || true
           cp -f "$BASE/$STAMP/results.json" "$PUB/results.json" || true
-          # Manifesto para saber de qual run veio
           echo "{\"date\":\"$DATE\",\"route\":\"$ROUTE\",\"stamp\":\"$STAMP\"}" > "$PUB/manifest.json"
 
-      - name: Commit & push
+      # ⬇️ NOVO: reconstrói o índice público imediatamente
+      - name: Build public index
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: node indexer.js
+
+      - name: Commit & push (dados + latest + index)
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -79,6 +87,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "Nenhum arquivo novo."
           else
-            git commit -m "capture: atualizar dados + publish latest"
+            git commit -m "capture: dados atualizados + latest + índice público"
             git push
           fi
