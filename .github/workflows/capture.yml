@@ -4,19 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       origin:
-        description: "IATA origem (ex: GYN)"
+        description: IATA origem (ex: GYN)
         required: false
         default: GYN
       dest:
-        description: "IATA destino (ex: CAC)"
+        description: IATA destino (ex: CAC)
         required: false
         default: CAC
       date:
-        description: "Data (AAAA-MM-DD)"
-        required: false
-        default: 2025-11-30
-  # schedule:
-  #   - cron: "0 9 * * *"  # 09:00 UTC diário (opcional)
+        description: Data (AAAA-MM-DD)
+        required: true
 
 permissions:
   contents: write
@@ -24,90 +21,71 @@ permissions:
   id-token: write
 
 jobs:
-  run:
+  capture-and-publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: '20'
 
-      - name: Install deps
-        run: npm install
+      - name: Install deps + Playwright
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund || npm i
+          npx playwright install --with-deps chromium
 
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
-
-      # 1) CAPTURA
+      # 1) Captura (scripts dentro de /scripts)
       - name: Capture
         env:
-          ORIGIN: ${{ github.event.inputs.origin }}
-          DEST:   ${{ github.event.inputs.dest }}
-          DATE:   ${{ github.event.inputs.date }}
-          OUTPUT_DIR: data
-          DEBUG: "1"
-        run: node capture.js
+          ORIGIN: ${{ inputs.origin || 'GYN' }}
+          DEST:   ${{ inputs.dest   || 'CAC' }}
+          DATE:   ${{ inputs.date   }}
+          DEBUG:  '1'
+        run: node scripts/capture.js
 
-      # 2) PUBLICA LATEST
-      - name: Publish stable "latest"
-        env:
-          ORIGIN: ${{ github.event.inputs.origin }}
-          DEST:   ${{ github.event.inputs.dest }}
-          DATE:   ${{ github.event.inputs.date }}
+      # 2) Reconstrói índice (gera data/public e latest)
+      - name: Build public index
+        run: node scripts/build-index.js
+
+      - name: Commit & push data
         run: |
           set -e
-          ORIGIN="${ORIGIN:-GYN}"
-          DEST="${DEST:-CAC}"
-          DATE="${DATE:-2025-11-30}"
-          ROUTE="${ORIGIN}-${DEST}"
-          BASE="data/${DATE}_${ROUTE}"
-          if [ ! -d "$BASE" ]; then
-            echo "Base '$BASE' não existe (nenhum run gerou dados)"; exit 0
-          fi
-          STAMP="$(ls -1 "$BASE" | tail -n1)"
-          PUB="data/public/${ROUTE}/latest"
-          mkdir -p "$PUB"
-          cp -f "$BASE/$STAMP/results.csv"  "$PUB/results.csv"  || true
-          cp -f "$BASE/$STAMP/results.json" "$PUB/results.json" || true
-          cp -f "$BASE/$STAMP/screenshot.png" "$PUB/screenshot.png" || true
-          echo "{\"date\":\"$DATE\",\"route\":\"$ROUTE\",\"stamp\":\"$STAMP\"}" > "$PUB/manifest.json"
-
-      # 3) RECONSTRÓI ÍNDICE (gera links RAW/CDN/PAGES)
-      - name: Build public index
-        env:
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-        run: node indexer.js
-
-      # 4) COMMIT (dados + latest + index)
-      - name: Commit & push
-        run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/
-          if git diff --cached --quiet; then
-            echo "Nenhum arquivo novo."
-          else
-            git commit -m "capture: dados atualizados + latest + índice público"
-            git push
-          fi
+          git add -A
+          git commit -m "capture: ${{ inputs.date }} ${{ inputs.origin || 'GYN' }}-${{ inputs.dest || 'CAC' }}" || echo "nada a commitar"
+          git push
 
-      # 5) PUBLICA NO GITHUB PAGES (branch gh-pages)
-      - name: Prepare Pages bundle
+      # ===== Publicação GitHub Pages (fluxo oficial) =====
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build site bundle
         run: |
-          rm -rf dist
-          mkdir -p dist/data/public
-          cp -r data/public/* dist/data/public/
-          # índice HTML simples (opcional)
-          printf "<h1>vp-capture public</h1><p>Conteúdo em <code>/data/public/</code></p>" > dist/index.html
+          set -e
+          rm -rf site
+          mkdir -p site/data/public
+          cp -R data/public/* site/data/public/ || true
+          cat > site/index.html <<'HTML'
+          <!doctype html><meta charset="utf-8">
+          <title>vp-capture</title>
+          <h1>Índice público</h1>
+          <p><a href="data/public/index.json">data/public/index.json</a></p>
+          <p><a href="data/public/index.md">data/public/index.md</a></p>
+          HTML
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
 
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: dist
-          publish_branch: gh-pages
+        uses: actions/deploy-pages@v4
+        
