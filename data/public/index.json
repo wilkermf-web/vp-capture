@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-11-10T18:02:26.908Z",
+  "generated_at": "2025-11-10T20:07:29.263Z",
   "repository": "wilkermf-web/vp-capture",
   "branch": "main",
   "total_runs": 2,
@@ -7,77 +7,53 @@
     {
       "date": "2025-11-29",
       "route": "GYN-CAC",
-      "stamp": "2025-11-10T17-55-50-490Z",
+      "stamp": "2025-11-10T20-06-31-809Z",
       "files": [
         {
-          "name": "results.csv",
-          "raw": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T17-55-50-490Z/results.csv"
-        },
-        {
-          "name": "results.json",
-          "raw": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T17-55-50-490Z/results.json"
-        },
-        {
           "name": "page.html",
-          "raw": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T17-55-50-490Z/page.html"
-        },
-        {
-          "name": "network.json",
-          "raw": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T17-55-50-490Z/network.json"
+          "raw": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T20-06-31-809Z/page.html"
         },
         {
           "name": "meta.json",
-          "raw": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T17-55-50-490Z/meta.json"
+          "raw": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T20-06-31-809Z/meta.json"
         },
         {
           "name": "screenshot.png",
-          "raw": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T17-55-50-490Z/screenshot.png"
+          "raw": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T20-06-31-809Z/screenshot.png"
         }
       ],
       "main": {
-        "results_csv": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T17-55-50-490Z/results.csv",
-        "results_json": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T17-55-50-490Z/results.json",
-        "screenshot": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T17-55-50-490Z/screenshot.png",
-        "html": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T17-55-50-490Z/page.html",
-        "meta": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T17-55-50-490Z/meta.json"
+        "results_csv": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T20-06-31-809Z/results.csv",
+        "results_json": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T20-06-31-809Z/results.json",
+        "screenshot": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T20-06-31-809Z/screenshot.png",
+        "html": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T20-06-31-809Z/page.html",
+        "meta": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T20-06-31-809Z/meta.json"
       }
     },
     {
-      "date": "2025-11-29",
+      "date": "2025-11-30",
       "route": "GYN-CAC",
-      "stamp": "2025-11-10T18-02-19-472Z",
+      "stamp": "2025-11-10T18-23-21-440Z",
       "files": [
         {
-          "name": "results.csv",
-          "raw": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T18-02-19-472Z/results.csv"
-        },
-        {
-          "name": "results.json",
-          "raw": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T18-02-19-472Z/results.json"
-        },
-        {
           "name": "page.html",
-          "raw": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T18-02-19-472Z/page.html"
-        },
-        {
-          "name": "network.json",
-          "raw": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T18-02-19-472Z/network.json"
+          "raw": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-30_GYN-CAC/2025-11-10T18-23-21-440Z/page.html"
         },
         {
           "name": "meta.json",
-          "raw": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T18-02-19-472Z/meta.json"
+          "raw": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-30_GYN-CAC/2025-11-10T18-23-21-440Z/meta.json"
         },
         {
           "name": "screenshot.png",
-          "raw": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T18-02-19-472Z/screenshot.png"
+          "raw": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-30_GYN-CAC/2025-11-10T18-23-21-440Z/screenshot.png"
         }
       ],
       "main": {
-        "results_csv": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T18-02-19-472Z/results.csv",
-        "results_json": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T18-02-19-472Z/results.json",
-        "screenshot": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T18-02-19-472Z/screenshot.png",
-        "html": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T18-02-19-472Z/page.html",
-        "meta": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-29_GYN-CAC/2025-11-10T18-02-19-472Z/meta.json"
+        "results_csv": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-30_GYN-CAC/2025-11-10T18-23-21-440Z/results.csv",
+        "results_json": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-30_GYN-CAC/2025-11-10T18-23-21-440Z/results.json",
+        "screenshot": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-30_GYN-CAC/2025-11-10T18-23-21-440Z/screenshot.png",
+        "html": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-30_GYN-CAC/2025-11-10T18-23-21-440Z/page.html",
+        "meta": "https://raw.githubusercontent.com/wilkermf-web/vp-capture/main/data/2025-11-30_GYN-CAC/2025-11-10T18-23-21-440Z/meta.json"
       }
     }
   ]
