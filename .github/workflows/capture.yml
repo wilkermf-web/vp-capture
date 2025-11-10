@@ -4,21 +4,28 @@ on:
   workflow_dispatch:
     inputs:
       origin:
-        description: IATA origem (ex: GYN)
+        description: "IATA origem (ex: GYN)"
         required: false
         default: GYN
       dest:
-        description: IATA destino (ex: CAC)
+        description: "IATA destino (ex: CAC)"
         required: false
         default: CAC
       date:
-        description: Data (AAAA-MM-DD)
+        description: "Data (AAAA-MM-DD)"
         required: true
+  # Para executar todo dia automaticamente (opcional), remova o comentário abaixo:
+  # schedule:
+  #   - cron: "9 9 * * *"   # 09:09 UTC diário
 
 permissions:
   contents: write
   pages: write
   id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
   capture-and-publish:
@@ -27,6 +34,7 @@ jobs:
 
     steps:
       - name: Checkout
+      # pega o repositório inteiro (precisa para commitar data/)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -34,40 +42,42 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
+          cache: "npm"
 
       - name: Install deps + Playwright
         run: |
           npm ci --ignore-scripts --no-audit --no-fund || npm i
           npx playwright install --with-deps chromium
 
-      # 1) Captura (scripts dentro de /scripts)
-      - name: Capture
+      # 1) CAPTURA (usa scripts/capture.js)
+      - name: Capture page (Vaidepromo)
         env:
           ORIGIN: ${{ inputs.origin || 'GYN' }}
           DEST:   ${{ inputs.dest   || 'CAC' }}
           DATE:   ${{ inputs.date   }}
-          DEBUG:  '1'
+          DEBUG:  "1"
         run: node scripts/capture.js
 
-      # 2) Reconstrói índice (gera data/public e latest)
+      # 2) RECONSTRÓI O ÍNDICE PÚBLICO (data/public e /latest)
       - name: Build public index
         run: node scripts/build-index.js
 
+      # 3) COMMITA OS ARQUIVOS GERADOS
       - name: Commit & push data
         run: |
           set -e
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "capture: ${{ inputs.date }} ${{ inputs.origin || 'GYN' }}-${{ inputs.dest || 'CAC' }}" || echo "nada a commitar"
+          git commit -m "capture: ${DATE:-manual} ${ORIGIN:-GYN}-${DEST:-CAC}" || echo "Nada para commitar"
           git push
 
-      # ===== Publicação GitHub Pages (fluxo oficial) =====
+      # 4) PUBLICA NO GITHUB PAGES
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      - name: Build site bundle
+      - name: Prepare site bundle (gh-pages)
         run: |
           set -e
           rm -rf site
@@ -88,4 +98,3 @@ jobs:
 
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
-        
