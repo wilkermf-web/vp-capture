@@ -1,0 +1,78 @@
+{
+  "url": "https://www.vaidepromo.com.br/passagens-aereas/pesquisa/GYNCAC251125/1/0/0/Y/",
+  "origin": "GYN",
+  "destination": "CAC",
+  "date": "2025-11-25",
+  "results": [
+    {
+      "airline": "Azul",
+      "price_brl": 846.81,
+      "price_label": "R$ 846,81",
+      "departure": "11:40",
+      "arrival": "18:10"
+    },
+    {
+      "airline": "Azul",
+      "price_brl": 855.19,
+      "price_label": "R$ 855,19",
+      "departure": "06:00",
+      "arrival": "11:59"
+    },
+    {
+      "airline": "Azul",
+      "price_brl": 855.19,
+      "price_label": "R$ 855,19",
+      "departure": "11:40",
+      "arrival": "18:10"
+    },
+    {
+      "airline": "Azul",
+      "price_brl": 926.41,
+      "price_label": "R$ 926,41",
+      "departure": "11:40",
+      "arrival": "18:10"
+    },
+    {
+      "airline": "Azul",
+      "price_brl": 968.31,
+      "price_label": "R$ 968,31",
+      "departure": "11:40",
+      "arrival": "18:10"
+    },
+    {
+      "airline": "Azul",
+      "price_brl": 1014.9,
+      "price_label": "R$ 1.014,90",
+      "departure": "11:40",
+      "arrival": "18:10"
+    },
+    {
+      "airline": "Azul",
+      "price_brl": 1033.73,
+      "price_label": "R$ 1.033,73",
+      "departure": "11:40",
+      "arrival": "18:10"
+    },
+    {
+      "airline": "Azul",
+      "price_brl": 1050.28,
+      "price_label": "R$ 1.050,28",
+      "departure": "11:40",
+      "arrival": "18:10"
+    },
+    {
+      "airline": "Azul",
+      "price_brl": 1068.98,
+      "price_label": "R$ 1.068,98",
+      "departure": "11:40",
+      "arrival": "18:10"
+    },
+    {
+      "airline": "Azul",
+      "price_brl": 1122.34,
+      "price_label": "R$ 1.122,34",
+      "departure": "11:40",
+      "arrival": "18:10"
+    }
+  ]
+}
