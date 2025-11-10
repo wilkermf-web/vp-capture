@@ -32,53 +32,52 @@ async function main(){
   for (const d of dayDirs){
     const [date, route] = d.name.split('_'); // route = ORG-DST
     const dayPath = path.join('data', d.name);
+
     const stamps = (await list(path.join(root, d.name))).filter(s => s.isDirectory());
     for (const s of stamps){
       const base = `${dayPath}/${s.name}`;
-      // arquivos que costumam existir:
+
+      // Arquivos comuns gerados pelo capture
       const candidates = [
-        'results.csv', 'results.json', 'page.html',
-        'network.json', 'meta.json', 'screenshot.png'
+        'results.csv',
+        'results.json',
+        'page.html',
+        'network.json',
+        'meta.json',
+        'screenshot.png'
       ];
-      // também pegue todos "screenshot*.png" se houver
+
+      // Inclui também qualquer "screenshot*.png" adicional
       const extra = (await list(path.join(root, d.name, s.name)))
         .filter(x => x.isFile() && /^screenshot.*\.png$/i.test(x.name))
         .map(x => x.name);
 
       const files = [...new Set([...candidates, ...extra])];
 
-      const entry = {
-        date,
-        route,
-        stamp: s.name,
-        files: []
-      };
+      const entry = { date, route, stamp: s.name, files: [] };
 
       for (const f of files){
         const rel = `${base}/${f}`;
         try{
           await fs.access(path.resolve(rel));
-          entry.files.push({
-            name: f,
-            raw: rawUrl(repo, branch, rel)
-          });
+          entry.files.push({ name: f, raw: rawUrl(repo, branch, rel) });
         } catch {}
       }
 
-      // destaque para CSV/JSON principais, se existirem
+      // Destaques principais, se existirem
       entry.main = {
-        results_csv: entry.files.find(x => x.name==='results.csv')?.raw || null,
-        results_json: entry.files.find(x => x.name==='results.json')?.raw || null,
-        screenshot: entry.files.find(x => x.name.startsWith('screenshot'))?.raw || null,
-        html: entry.files.find(x => x.name==='page.html')?.raw || null,
-        meta: entry.files.find(x => x.name==='meta.json')?.raw || null
+        results_csv: entry.files.find(x => x.name === 'results.csv')?.raw || null,
+        results_json: entry.files.find(x => x.name === 'results.json')?.raw || null,
+        screenshot: entry.files.find(x => /^screenshot.*\.png$/i.test(x.name))?.raw || null,
+        html: entry.files.find(x => x.name === 'page.html')?.raw || null,
+        meta: entry.files.find(x => x.name === 'meta.json')?.raw || null
       };
 
       items.push(entry);
     }
   }
 
-  // ordena por data e stamp
+  // Ordena por data e timestamp
   items.sort((a,b)=> a.date.localeCompare(b.date) || a.stamp.localeCompare(b.stamp));
 
   const indexJson = {
@@ -91,17 +90,16 @@ async function main(){
 
   await fs.writeFile(path.join(outDir, 'index.json'), JSON.stringify(indexJson, null, 2), 'utf8');
 
-  // também gera um index.md legível
+  // Também gera um index legível em Markdown
   let md = `# Índice público de capturas\n\nGerado em ${indexJson.generated_at}\n\n`;
-  let currentDay = '';
+  let currentKey = '';
   for (const it of items){
-    if (it.date !== currentDay){
-      currentDay = it.date;
-      md += `\n## ${it.date} (${it.route})\n\n`;
-      md += `- stamp: \`${it.stamp}\`\n`;
-    } else {
-      md += `- stamp: \`${it.stamp}\`\n`;
+    const key = `${it.date} (${it.route})`;
+    if (key !== currentKey){
+      currentKey = key;
+      md += `\n## ${key}\n\n`;
     }
+    md += `- stamp: \`${it.stamp}\`\n`;
     if (it.main.results_csv) md += `  - [results.csv](${it.main.results_csv})\n`;
     if (it.main.results_json) md += `  - [results.json](${it.main.results_json})\n`;
     if (it.main.screenshot)  md += `  - [screenshot](${it.main.screenshot})\n`;
