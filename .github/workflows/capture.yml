@@ -15,12 +15,13 @@ on:
         description: "Data (AAAA-MM-DD)"
         required: false
         default: 2025-11-30
-  # Se quiser rodar automático todo dia, descomente:
   # schedule:
-  #   - cron: "0 9 * * *"  # 09:00 UTC
+  #   - cron: "0 9 * * *"  # 09:00 UTC diário (opcional)
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   run:
@@ -41,7 +42,7 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      # 1) CAPTURA (usa seu capture.js atual)
+      # 1) CAPTURA
       - name: Capture
         env:
           ORIGIN: ${{ github.event.inputs.origin }}
@@ -51,7 +52,7 @@ jobs:
           DEBUG: "1"
         run: node capture.js
 
-      # 2) PUBLICA O "LATEST" ESTÁVEL DA ROTA
+      # 2) PUBLICA LATEST
       - name: Publish stable "latest"
         env:
           ORIGIN: ${{ github.event.inputs.origin }}
@@ -67,28 +68,23 @@ jobs:
           if [ ! -d "$BASE" ]; then
             echo "Base '$BASE' não existe (nenhum run gerou dados)"; exit 0
           fi
-          # pega a pasta de timestamp mais recente
           STAMP="$(ls -1 "$BASE" | tail -n1)"
           PUB="data/public/${ROUTE}/latest"
           mkdir -p "$PUB"
-
-          # publica artefatos principais
           cp -f "$BASE/$STAMP/results.csv"  "$PUB/results.csv"  || true
           cp -f "$BASE/$STAMP/results.json" "$PUB/results.json" || true
           cp -f "$BASE/$STAMP/screenshot.png" "$PUB/screenshot.png" || true
-
-          # manifesto informativo
           echo "{\"date\":\"$DATE\",\"route\":\"$ROUTE\",\"stamp\":\"$STAMP\"}" > "$PUB/manifest.json"
 
-      # 3) RECONSTRÓI O ÍNDICE PÚBLICO (lista tudo que há em data/*/*)
+      # 3) RECONSTRÓI ÍNDICE (gera links RAW/CDN/PAGES)
       - name: Build public index
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
         run: node indexer.js
 
-      # 4) COMMIT ÚNICO (dados + latest + índice)
-      - name: Commit & push (dados + latest + index)
+      # 4) COMMIT (dados + latest + index)
+      - name: Commit & push
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -99,3 +95,19 @@ jobs:
             git commit -m "capture: dados atualizados + latest + índice público"
             git push
           fi
+
+      # 5) PUBLICA NO GITHUB PAGES (branch gh-pages)
+      - name: Prepare Pages bundle
+        run: |
+          rm -rf dist
+          mkdir -p dist/data/public
+          cp -r data/public/* dist/data/public/
+          # índice HTML simples (opcional)
+          printf "<h1>vp-capture public</h1><p>Conteúdo em <code>/data/public/</code></p>" > dist/index.html
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: dist
+          publish_branch: gh-pages
