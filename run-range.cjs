@@ -1,4 +1,4 @@
-// run-range.cjs — chama seu scraper 1 dia por vez (ex.: 90 dias) e organiza em data/
+// run-range.cjs — varre 1 dia por vez e sempre deixa rastro (meta + CSV header)
 
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -26,7 +26,19 @@ const ts = () => new Date().toISOString().replace(/[:.]/g, '-');
 const ensureDir = p => fs.mkdirSync(p, { recursive: true });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// (apenas para manter limpo enquanto roda no runner)
+// cria header em public/results.csv (se não existir)
+function ensureCsvHeader() {
+  const pub = 'public';
+  const csv = path.join(pub, 'results.csv');
+  const header = [
+    'date','from','to','best_price','airline','flight','depart','arrive',
+    'duration','stops','source','baggage','scraped_at'
+  ].join(',') + '\n';
+  if (!fs.existsSync(pub)) fs.mkdirSync(pub, { recursive: true });
+  if (!fs.existsSync(csv)) fs.writeFileSync(csv, header);
+}
+
+// limpa local >1h (só no runner; o faxineiro do repo é o cleanup.yml)
 function cleanupLocalTTL(baseDir = 'data', ttlMin = 60) {
   if (!fs.existsSync(baseDir)) return;
   const now = Date.now(), ttlMs = ttlMin * 60 * 1000;
@@ -39,7 +51,7 @@ function cleanupLocalTTL(baseDir = 'data', ttlMin = 60) {
   }
 }
 
-// seu scraper de 1 dia ESTÁ NA RAIZ:
+// seu scraper de 1 dia (na RAIZ)
 const SCRAPER = 'scrape-vaidepromo.js';
 
 function runSingleDay({ dateStr, from, to, outDir }) {
@@ -73,9 +85,13 @@ function runSingleDay({ dateStr, from, to, outDir }) {
 (async () => {
   const { from, to, days, delayMs } = parseArgs();
 
-  // limpeza local (não mexe no repo; a faxina do repo é o cleanup.yml)
+  // 1) Garante CSV com cabeçalho (pra sempre ter arquivo em public/)
+  ensureCsvHeader();
+
+  // 2) Limpa local
   cleanupLocalTTL('data', 60);
 
+  // 3) Gera datas
   const start = new Date(); start.setHours(0,0,0,0);
   for (let i = 0; i < days; i++) {
     const d = new Date(start); d.setDate(d.getDate() + i);
@@ -84,6 +100,10 @@ function runSingleDay({ dateStr, from, to, outDir }) {
     const dayDir = path.join('data', `${dateStr}_${from}-${to}`);
     const runDir = path.join(dayDir, ts());
     ensureDir(runDir);
+
+    // **IMPORTANTE**: cria um arquivo meta para não ficar vazio
+    const meta = { from, to, date: dateStr, started_at: new Date().toISOString() };
+    fs.writeFileSync(path.join(runDir, '_meta.json'), JSON.stringify(meta, null, 2));
 
     try { await runSingleDay({ dateStr, from, to, outDir: runDir }); }
     catch (e) { console.error('[run] Falha em', dateStr, e.message); }
