@@ -1,13 +1,13 @@
 name: Aggregate results.csv into public/aggregate.csv
 
 on:
-  # Roda automaticamente quando QUALQUER coisa em data/** muda (add/edit/delete)
+  # Atualiza sempre que QUALQUER coisa em data/** mudar (add/alterar/apagar)
   push:
     paths:
       - "data/**"
-  # Roda manualmente em Actions -> Run workflow
+  # Rodar manualmente
   workflow_dispatch: {}
-  # Extra: roda a cada 30 min para garantir atualização mesmo sem push
+  # Extra: roda a cada 30 minutos para manter sincronizado
   schedule:
     - cron: "*/30 * * * *"
 
@@ -29,7 +29,7 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Aggregate data/**/results.csv -> public/aggregate.csv
+      - name: Aggregate data/**/results.csv -> public/aggregate.csv (somente data e valores)
         run: |
           node - <<'NODE'
           const fs = require('fs');
@@ -48,12 +48,11 @@ jobs:
               }
             }
             walk(root);
-            // ordena por caminho (logo, por data/rota/stamp)
             out.sort((a,b)=>a.localeCompare(b));
             return out;
           }
 
-          // Parser compatível com seu CSV (todos os campos entre aspas + ; como separador)
+          // Parser compatível com "campos entre aspas" separados por ";"
           function parseCSVQuotedSemicolon(text){
             const lines = text.trim().split(/\r?\n/).filter(Boolean);
             if(!lines.length) return { header:[], rows:[] };
@@ -72,57 +71,61 @@ jobs:
             const rows = lines
               .map(parseLine)
               .filter(arr=>arr.length===header.length)
-              .map(arr=>Object.fromEntries(header.map((h,i)=>[h, arr[i]])));
+              .map(arr=>Object.fromEntries(header.map((h,i)=>[String(h).trim().toLowerCase(), arr[i]]))); // header -> minúsculo
             return { header, rows };
           }
 
-          function toCSV(items, header){
-            const esc = v => String(v ?? '').replace(/"/g,'""');
-            const head = header.map(h=>`"${esc(h)}"`).join(';');
-            const body = items.map(it => header.map(h=>`"${esc(it[h])}"`).join(';')).join('\n');
-            return head + '\n' + body + '\n';
+          function normalizePrice(v){
+            // aceita "1234.56" ou "1.234,56"
+            if(v==null) return null;
+            const s = String(v).replace(/\./g,'').replace(',', '.'); // remove milhar e troca vírgula por ponto
+            const n = Number.parseFloat(s);
+            return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
           }
 
-          // 1) descobrir todos os results.csv
+          // 1) ler todos os results.csv
           const files = listResultsFiles('data');
+          const byDate = new Map(); // date -> [prices]
 
-          // 2) ler e juntar linhas
-          const all = [];
           for(const fp of files){
             try{
               const txt = fs.readFileSync(fp,'utf8');
-              const { header, rows } = parseCSVQuotedSemicolon(txt);
-
-              // Normaliza nomes de colunas esperados
-              // Seu CSV de captura usa: date;route;stamp;price_brl
-              // Se vierem com maiúsculas/variação, baixamos pra minúsculo:
-              const hmap = Object.fromEntries(header.map(h=>[String(h).trim().toLowerCase(), h]));
-              const get = (r,k) => r[hmap[k]] ?? r[k] ?? '';
-
+              const { rows } = parseCSVQuotedSemicolon(txt);
               for(const r of rows){
-                all.push({
-                  date: get(r,'date'),
-                  route: get(r,'route'),
-                  stamp: get(r,'stamp'),
-                  price_brl: get(r,'price_brl'),
-                  source_file: fp
-                });
+                // seus arquivos têm colunas: date;route;stamp;price_brl
+                const date = r.date || '';
+                const price = normalizePrice(r.price_brl);
+                if(!date || price==null) continue;
+                if(!byDate.has(date)) byDate.set(date, []);
+                byDate.get(date).push(price);
               }
             }catch(e){
               console.error('Falhou em', fp, e.message);
             }
           }
 
-          // 3) ordenar por data + stamp
-          all.sort((a,b)=>((a.date||'')+' '+(a.stamp||'')).localeCompare((b.date||'')+' '+(b.stamp||'')));
+          // 2) ordenar datas e normalizar valores (ordem crescente, sem duplicados)
+          const dates = Array.from(byDate.keys()).sort();
+          for(const d of dates){
+            const uniqueSorted = Array.from(new Set(byDate.get(d))).sort((a,b)=>a-b);
+            byDate.set(d, uniqueSorted);
+          }
 
-          // 4) garantir pasta public/ e salvar aggregate.csv
+          // 3) gerar CSV final: "date;price_brl" + linha em branco entre dias
           ensureDir('public');
-          const outHeader = ['date','route','stamp','price_brl','source_file'];
-          const csv = toCSV(all, outHeader);
-          fs.writeFileSync(path.join('public','aggregate.csv'), csv, 'utf8');
+          const out = [];
+          out.push('"date";"price_brl"'); // cabeçalho (se quiser SEM cabeçalho, remova esta linha)
+          for(let idx=0; idx<dates.length; idx++){
+            const d = dates[idx];
+            const prices = byDate.get(d);
+            for(const p of prices){
+              out.push(`"${d}";"${p.toFixed(2)}"`);
+            }
+            if(idx < dates.length-1) out.push(''); // linha em branco separando os dias
+          }
+          fs.writeFileSync(path.join('public','aggregate.csv'), out.join('\n')+'\n', 'utf8');
 
-          console.log(`[aggregate] arquivos lidos: ${files.length}, linhas totais: ${all.length}`);
+          console.log(`[aggregate] dias: ${dates.length} | linhas (sem contar em branco): ${out.length}`);
           NODE
 
       - name: Commit & push public/aggregate.csv (if changed)
@@ -134,6 +137,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "Sem mudanças para commitar."
           else
-            git commit -m "build(aggregate): atualizar public/aggregate.csv"
+            git commit -m "build(aggregate): atualizar public/aggregate.csv (apenas data e valores, agrupado por dia)"
             git push
           fi
