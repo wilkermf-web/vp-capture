@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "capture": "node scripts/capture.js",
-    "range": "node scripts/range.js"
+    "capture": "node capture.js",
+    "index": "node indexer.js"
   },
   "dependencies": {
     "playwright": "1.56.1"
