@@ -1,13 +1,9 @@
 {
   "name": "vp-capture",
   "version": "1.0.0",
+  "private": true,
   "type": "module",
   "scripts": {
-    "capture": "node scripts/scrape-vaidepromo.js",
-    "index": "node scripts/build-index.js"
-  },
-  "dependencies": {
-    "playwright": "1.56.1",
-    "fs-extra": "11.2.0"
+    "build:public": "node aggregate.mjs"
   }
 }
