@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "capture": "node scripts/capture.js",
-    "range": "node scripts/range.js"     // <— ADICIONEI ESTA LINHA
+    "range": "node scripts/range.js"
   },
   "dependencies": {
     "playwright": "1.56.1"
