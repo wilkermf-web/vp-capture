@@ -1,0 +1,139 @@
+name: Aggregate results.csv into public/aggregate.csv
+
+on:
+  # Roda automaticamente quando QUALQUER coisa em data/** muda (add/edit/delete)
+  push:
+    paths:
+      - "data/**"
+  # Roda manualmente em Actions -> Run workflow
+  workflow_dispatch: {}
+  # Extra: roda a cada 30 min para garantir atualização mesmo sem push
+  schedule:
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  build-aggregate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Node (no deps needed)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Aggregate data/**/results.csv -> public/aggregate.csv
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+
+          function ensureDir(dir){ fs.mkdirSync(dir, { recursive:true }); }
+
+          function listResultsFiles(root="data"){
+            const out=[];
+            function walk(d){
+              if(!fs.existsSync(d)) return;
+              for(const ent of fs.readdirSync(d, { withFileTypes:true })){
+                const full = path.join(d, ent.name);
+                if(ent.isDirectory()) walk(full);
+                else if(ent.isFile() && ent.name === 'results.csv') out.push(full);
+              }
+            }
+            walk(root);
+            // ordena por caminho (logo, por data/rota/stamp)
+            out.sort((a,b)=>a.localeCompare(b));
+            return out;
+          }
+
+          // Parser compatível com seu CSV (todos os campos entre aspas + ; como separador)
+          function parseCSVQuotedSemicolon(text){
+            const lines = text.trim().split(/\r?\n/).filter(Boolean);
+            if(!lines.length) return { header:[], rows:[] };
+
+            const parseLine = (line) => {
+              const fields=[];
+              const re = /"((?:[^"]|"")*)"(?:;|$)/g;
+              let m;
+              while((m=re.exec(line))!==null){
+                fields.push(m[1].replace(/""/g,'"'));
+              }
+              return fields;
+            };
+
+            const header = parseLine(lines.shift());
+            const rows = lines
+              .map(parseLine)
+              .filter(arr=>arr.length===header.length)
+              .map(arr=>Object.fromEntries(header.map((h,i)=>[h, arr[i]])));
+            return { header, rows };
+          }
+
+          function toCSV(items, header){
+            const esc = v => String(v ?? '').replace(/"/g,'""');
+            const head = header.map(h=>`"${esc(h)}"`).join(';');
+            const body = items.map(it => header.map(h=>`"${esc(it[h])}"`).join(';')).join('\n');
+            return head + '\n' + body + '\n';
+          }
+
+          // 1) descobrir todos os results.csv
+          const files = listResultsFiles('data');
+
+          // 2) ler e juntar linhas
+          const all = [];
+          for(const fp of files){
+            try{
+              const txt = fs.readFileSync(fp,'utf8');
+              const { header, rows } = parseCSVQuotedSemicolon(txt);
+
+              // Normaliza nomes de colunas esperados
+              // Seu CSV de captura usa: date;route;stamp;price_brl
+              // Se vierem com maiúsculas/variação, baixamos pra minúsculo:
+              const hmap = Object.fromEntries(header.map(h=>[String(h).trim().toLowerCase(), h]));
+              const get = (r,k) => r[hmap[k]] ?? r[k] ?? '';
+
+              for(const r of rows){
+                all.push({
+                  date: get(r,'date'),
+                  route: get(r,'route'),
+                  stamp: get(r,'stamp'),
+                  price_brl: get(r,'price_brl'),
+                  source_file: fp
+                });
+              }
+            }catch(e){
+              console.error('Falhou em', fp, e.message);
+            }
+          }
+
+          // 3) ordenar por data + stamp
+          all.sort((a,b)=>((a.date||'')+' '+(a.stamp||'')).localeCompare((b.date||'')+' '+(b.stamp||'')));
+
+          // 4) garantir pasta public/ e salvar aggregate.csv
+          ensureDir('public');
+          const outHeader = ['date','route','stamp','price_brl','source_file'];
+          const csv = toCSV(all, outHeader);
+          fs.writeFileSync(path.join('public','aggregate.csv'), csv, 'utf8');
+
+          console.log(`[aggregate] arquivos lidos: ${files.length}, linhas totais: ${all.length}`);
+          NODE
+
+      - name: Commit & push public/aggregate.csv (if changed)
+        shell: bash
+        run: |
+          git config user.name  "${GITHUB_ACTOR}"
+          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+          git add public/aggregate.csv
+          if git diff --cached --quiet; then
+            echo "Sem mudanças para commitar."
+          else
+            git commit -m "build(aggregate): atualizar public/aggregate.csv"
+            git push
+          fi
