@@ -1,6 +1,6 @@
-// ===== topo do scrape-vaidepromo.js (CJS) =====
-const fs = require('node:fs');
-const path = require('node:path');
+// ===== topo do scrape-vaidepromo.js (ESM) =====
+import fs from 'node:fs';
+import path from 'node:path';
 
 function getArg(flag, def = null) {
   const i = process.argv.indexOf(flag);
@@ -9,7 +9,7 @@ function getArg(flag, def = null) {
 
 const FROM = getArg('--from', process.env.FROM_IATA || 'GYN');
 const TO = getArg('--to', process.env.TO_IATA || 'CAC');
-const DATE = getArg('--date', process.env.DEPART_DATE); // formato yyyy-mm-dd
+const DATE = getArg('--date', process.env.DEPART_DATE);
 
 let OUT = getArg('--out', process.env.OUTPUT_DIR);
 if (!OUT) {
@@ -18,7 +18,6 @@ if (!OUT) {
 }
 fs.mkdirSync(OUT, { recursive: true });
 
-// Helpers para salvar:
 function saveJSON(fileName, obj) {
   fs.writeFileSync(path.join(OUT, fileName), JSON.stringify(obj, null, 2));
 }
@@ -38,22 +37,9 @@ function appendCSVRow(rowObj) {
 
 console.log('[scraper] OUT =', OUT);
 
-// ===== depois que você extrair os voos do Vaidepromo =====
-// Suponha que você já tenha um array "flights" com resultados do dia:
-//
-// const flights = [{
-//   price: 420.99, airline: 'AZUL', flight: 'AD1234',
-//   depart: '06:10', arrive: '09:45', duration: '3h35', stops: '1',
-//   source: 'vaidepromo', baggage: 'sem bagagem'
-// }, ...]
-//
-// Pegue o mais barato e salve:
-
-function onFinished(flights) {
-  // 1) salvar o bruto do dia
+// Chame isto no final com o array de voos
+export function onFinished(flights) {
   saveJSON('results.json', { date: DATE, from: FROM, to: TO, count: flights.length, flights });
-
-  // 2) linha resumida para o CSV geral
   const best = flights.slice().sort((a,b)=>a.price-b.price)[0];
   if (best) {
     appendCSVRow({
