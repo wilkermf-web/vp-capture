@@ -1,0 +1,19 @@
+name: range-90d
+on:
+  workflow_dispatch:
+    inputs:
+      from: { description: "IATA origem", required: true, default: "GYN" }
+      to:   { description: "IATA destino", required: true, default: "CAC" }
+      days: { description: "Dias pra frente", required: true, default: "90" }
+      delay_ms: { description: "Pausa (ms)", required: true, default: "4000" }
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm ci || npm i
+      - name: Rodar varredura
+        run: |
+          node run-range.js --from "${{ inputs.from }}" --to "${{ inputs.to }}" --days "${{ inputs.days }}" --delay-ms "${{ inputs.delay_ms }}"
