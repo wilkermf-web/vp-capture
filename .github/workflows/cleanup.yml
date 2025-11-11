@@ -1,0 +1,86 @@
+name: cleanup-data
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # roda todo começo de hora
+  workflow_dispatch:
+    inputs:
+      ttl_minutes:
+        description: "Apagar itens com mais de X minutos (padrão 60)"
+        required: false
+        default: "60"
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Remover itens antigos de data/
+        env:
+          TTL_MIN: ${{ github.event.inputs.ttl_minutes || 60 }}
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+
+          const base = 'data';
+          const ttlMin = Number(process.env.TTL_MIN || '60');
+          const ttlMs = ttlMin * 60 * 1000;
+          const now = Date.now();
+
+          let changed = false;
+
+          if (fs.existsSync(base)) {
+            for (const entry of fs.readdirSync(base)) {
+              const full = path.join(base, entry);
+              try {
+                const st = fs.statSync(full);
+                if (now - st.mtimeMs > ttlMs) {
+                  fs.rmSync(full, { recursive: true, force: true });
+                  console.log('Apagado:', full);
+                  changed = true;
+                }
+              } catch (e) {
+                console.error('Erro checando', full, e.message);
+              }
+            }
+            // mantém a pasta versionada
+            const keep = path.join(base, '.gitkeep');
+            if (!fs.existsSync(keep)) {
+              fs.writeFileSync(keep, '');
+              changed = true;
+              console.log('Criado:', keep);
+            }
+          } else {
+            fs.mkdirSync(base, { recursive: true });
+            fs.writeFileSync(path.join(base, '.gitkeep'), '');
+            changed = true;
+            console.log('Criada pasta data/ com .gitkeep');
+          }
+
+          if (changed) fs.writeFileSync('.cleanup.changed', new Date().toISOString());
+          NODE
+
+      - name: Commit e push (se mudou algo)
+        if: ${{ hashFiles('.cleanup.changed') != '' }}
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "cleanup: remove dados com +${{ github.event.inputs.ttl_minutes || 60 }}min em data/"
+          file_pattern: |
+            data/**
+            .cleanup.changed
+
+      - name: Remover flag
+        if: always()
+        run: rm -f .cleanup.changed || true
+
+        
