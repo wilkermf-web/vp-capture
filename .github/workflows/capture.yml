@@ -12,7 +12,7 @@ on:
         required: false
         default: CAC
       start_date:
-        description: "Data inicial (AAAA-MM-DD). Deixe vazio para 'hoje'."
+        description: "Data inicial (AAAA-MM-DD). Vazio = hoje"
         required: false
         default: ""
       days:
@@ -31,61 +31,61 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: capture-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   capture-and-commit:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           persist-credentials: true
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: Install deps
-        run: npm ci || npm i
+      # Instala deps SÓ se existir package.json (funciona com ou sem package-lock.json)
+      - name: Install deps (if package.json exists)
+        run: |
+          if [ -f package.json ]; then
+            npm ci || npm i
+          else
+            echo "Sem package.json — pulando npm install"
+          fi
 
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+        run: npx -y playwright@1.56.1 install --with-deps chromium
 
-      - name: Resolve inputs
-        id: cfg
+      - name: Run range (N dias em loop)
         shell: bash
         run: |
-          ORIGIN="${{ github.event.inputs.origin }}"
-          DEST="${{ github.event.inputs.dest }}"
-          START_DATE="${{ github.event.inputs.start_date }}"
-          DAYS="${{ github.event.inputs.days }}"
-          DELAY_MS="${{ github.event.inputs.delay_ms }}"
-          DEBUG="${{ github.event.inputs.debug }}"
-          : "${ORIGIN:=GYN}"
-          : "${DEST:=CAC}"
-          : "${DAYS:=90}"
-          : "${DELAY_MS:=3500}"
-          : "${DEBUG:=0}"
-          echo "origin=$ORIGIN"     >> $GITHUB_OUTPUT
-          echo "dest=$DEST"         >> $GITHUB_OUTPUT
-          echo "start_date=$START_DATE" >> $GITHUB_OUTPUT
-          echo "days=$DAYS"         >> $GITHUB_OUTPUT
-          echo "delay_ms=$DELAY_MS" >> $GITHUB_OUTPUT
-          echo "debug=$DEBUG"       >> $GITHUB_OUTPUT
+          set -e
+          ORIGIN="${{ github.event.inputs.origin || 'GYN' }}"
+          DEST="${{ github.event.inputs.dest   || 'CAC' }}"
+          START="${{ github.event.inputs.start_date }}"
+          DAYS="${{ github.event.inputs.days      || '90' }}"
+          DELAY="${{ github.event.inputs.delay_ms || '3500' }}"
+          DEBUG="${{ github.event.inputs.debug    || '0' }}"
 
-      - name: Run range (dia a dia)
-        env:
-          ORIGIN:     ${{ steps.cfg.outputs.origin }}
-          DEST:       ${{ steps.cfg.outputs.dest }}
-          START_DATE: ${{ steps.cfg.outputs.start_date }}
-          DAYS:       ${{ steps.cfg.outputs.days }}
-          DELAY_MS:   ${{ steps.cfg.outputs.delay_ms }}
-          DEBUG:      ${{ steps.cfg.outputs.debug }}
-        run: npm run range
+          # Data inicial: hoje no fuso de SP, se não informada
+          if [ -z "$START" ]; then
+            START=$(TZ=America/Sao_Paulo date +%F)
+          fi
+
+          echo "Iniciando captura: $ORIGIN->$DEST | start=$START | days=$DAYS | delay_ms=$DELAY | debug=$DEBUG"
+
+          for ((i=0;i<DAYS;i++)); do
+            D=$(date -d "$START + $i day" +%F)
+            echo "==> Dia $((i+1))/$DAYS: $D"
+            ORIGIN="$ORIGIN" DEST="$DEST" DATE="$D" DEBUG="$DEBUG" node scripts/capture.js \
+              || echo "Falha no dia $D, continuando..."
+            if [ $i -lt $((DAYS-1)) ]; then
+              sleep $((DELAY/1000))
+            fi
+          done
 
       - name: Commit & push data
         shell: bash
@@ -96,7 +96,18 @@ jobs:
           if git diff --cached --quiet; then
             echo "Sem mudanças para commitar."
           else
-            MSG="capture-range: ${{ steps.cfg.outputs.origin }}-${{ steps.cfg.outputs.dest }} start=${{ steps.cfg.outputs.start_date || 'today' }} days=${{ steps.cfg.outputs.days }}"
+            MSG="capture-range: ${{ github.event.inputs.origin || 'GYN' }}-${{ github.event.inputs.dest || 'CAC' }} start=${{ github.event.inputs.start_date || 'today' }} days=${{ github.event.inputs.days || '90' }}"
             git commit -m "$MSG"
             git push
           fi
+
+      - name: Upload artifact (opcional)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-${{ github.event.inputs.origin || 'GYN' }}-${{ github.event.inputs.dest || 'CAC' }}-${{ github.run_number }}
+          path: |
+            data/**
+            public/**
+          if-no-files-found: warn
+          retention-days: 7
