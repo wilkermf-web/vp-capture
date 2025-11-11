@@ -1,4 +1,4 @@
-// scripts/capture.js (ESM) — abre Vaidepromo, extrai "Preço por adulto" e salva os arquivos do dia
+// scripts/capture.js (ESM) — abre Vaidepromo, extrai "Preço por adulto" e salva arquivos
 import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
@@ -32,7 +32,7 @@ function parseBRL(text) {
   return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
 }
 
-async function autoScroll(page, { step = 900, idleMs = 700, max = 40 } = {}) {
+async function autoScroll(page, { step = 1000, idleMs = 700, max = 50 } = {}) {
   let lastY = -1;
   for (let i = 0; i < max; i++) {
     const y = await page.evaluate(s => {
@@ -48,7 +48,7 @@ async function autoScroll(page, { step = 900, idleMs = 700, max = 40 } = {}) {
 
 /* ----------------------------- caminhos -------------------------------- */
 function buildUrl({ origin, dest, date }) {
-  // date chega "YYYY-MM-DD" e precisa ir "YYMMDD"
+  // date "YYYY-MM-DD" -> "YYMMDD"
   const toYYMMDD = (dateStr) => {
     const [y, m, d] = dateStr.split('-').map(Number);
     const yy = String(y).slice(-2);
@@ -71,38 +71,41 @@ function nowStamp() {
 
 /* -------------------------- extração de preços -------------------------- */
 async function extractPricesFromDOM(page) {
-  // Aguarda aparecer algum bloco com rótulo "Preço por adulto"
+  // 1) Espera aparecer pelo menos um rótulo "Preço por adulto"
   await page.locator('span:has-text("Preço por adulto")').first().waitFor({ timeout: 60000 }).catch(() => {});
-  // Garante que todos os cards renderizaram
+  // 2) Rola para forçar o lazy-load de todos os cards
   await autoScroll(page);
 
-  // Cada card que tem o rótulo
-  const cards = page.locator('div:has(span:has-text("Preço por adulto"))');
-  const count = await cards.count();
-  const prices = [];
+  // 3) Coleta APENAS spans com class*="pricePerAdultValueSectionMoney" nos cards
+  let rawTexts = await page.$$eval(
+    'div:has(span:has-text("Preço por adulto")) [class*="pricePerAdultValueSectionMoney"]',
+    (els) => els
+      .filter(el => {
+        const s = getComputedStyle(el);
+        return s.display !== 'none' && s.visibility !== 'hidden' && el.offsetParent !== null;
+      })
+      .map(el => el.textContent?.trim() || '')
+  );
 
-  for (let i = 0; i < count; i++) {
-    const card = cards.nth(i);
-
-    // alvo preferido: class que contém "pricePerAdultValueSectionMoney" (hash muda)
-    let priceText = null;
-    const moneySpan = card.locator('[class*="pricePerAdultValueSectionMoney"]').first();
-    if (await moneySpan.count()) {
-      priceText = (await moneySpan.innerText()).trim();
-    } else {
-      // fallback: primeiro span com "R$" dentro do card
-      const anyMoney = card.locator('span:has-text("R$")').first();
-      if (await anyMoney.count()) {
-        priceText = (await anyMoney.innerText()).trim();
-      }
-    }
-
-    const value = parseBRL(priceText);
-    if (value != null) prices.push(value);
+  // 4) Fallback (caso a classe mude): pega spans com "R$" dentro do card
+  if (!rawTexts.length) {
+    rawTexts = await page.$$eval(
+      'div:has(span:has-text("Preço por adulto")) span:has-text("R$")',
+      (els) => els
+        .filter(el => {
+          const s = getComputedStyle(el);
+          return s.display !== 'none' && s.visibility !== 'hidden' && el.offsetParent !== null;
+        })
+        .map(el => el.textContent?.trim() || '')
+    );
   }
 
-  // ordena e remove duplicados ocasionais
-  return Array.from(new Set(prices)).sort((a, b) => a - b);
+  // 5) Normaliza para número BRL (ex.: "R$ 926,41" -> 926.41)
+  const nums = rawTexts.map(parseBRL).filter(n => n != null);
+
+  // 6) Remove duplicados ocasionais e ordena
+  const uniqueSorted = Array.from(new Set(nums)).sort((a, b) => a - b);
+  return uniqueSorted;
 }
 
 /* -------------------------------- main ---------------------------------- */
