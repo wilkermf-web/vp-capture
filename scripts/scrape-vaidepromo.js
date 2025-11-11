@@ -1,140 +1,194 @@
-// Coletor Vaidepromo — lê SOMENTE "Preço por adulto" de cada card
-// Execução local/Actions: ORIGIN=GYN DEST=CAC DATE=2025-11-30 node scripts/scrape-vaidepromo.js
-import fs from "fs";
-import path from "path";
-import { chromium } from "playwright";
+// scripts/scrape-vaidepromo.js
+// Captura preços "Preço por adulto" direto do DOM do Vaidepromo (Playwright)
 
-const ORIGIN = (process.env.ORIGIN || "GYN").toUpperCase();
-const DEST   = (process.env.DEST  || "CAC").toUpperCase();
-const DATE   = process.env.DATE || "2025-11-30"; // AAAA-MM-DD
-const DEBUG  = process.env.DEBUG === "1";
+import { chromium } from 'playwright';
+import fs from 'fs';
+import fsp from 'fs/promises';
+import path from 'path';
 
-function yymmdd(iso) { const [Y,M,D]=iso.split("-"); return `${Y.slice(2)}${M}${D}`; }
-function tidy(s) { return (s||"").replace(/\s+/g," ").trim(); }
-function parseBRL(txt){
-  // "R$ 1.016,27" -> 1016.27
-  const s = txt.replace(/\s/g,"").replace(/[^\d,.-]/g,"").replace(/\./g,"").replace(",",".");
-  return Number(s);
+function yymmdd(dateStr) {
+  // dateStr: "2025-11-30" -> "251130"
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const y = String(d.getUTCFullYear()).slice(-2);
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}${m}${dd}`;
 }
-
-async function clickShowMore(page, tries=6){
-  for (let i=0;i<tries;i++){
-    const btn = page.locator('button:has-text("Mostrar mais"), button:has-text("Ver mais")').first();
-    if (await btn.isVisible().catch(()=>false)) {
-      await btn.click().catch(()=>{});
-      await page.waitForTimeout(1200);
-    } else break;
+function brlToNumber(text) {
+  // "R$ 1.234,56" -> 1234.56
+  const m = (text || '').match(/(\d{1,3}(\.\d{3})*|\d+),\d{2}/);
+  if (!m) return null;
+  return parseFloat(m[0].replace(/\./g, '').replace(',', '.'));
+}
+function firstMatch(re, s, def = null) {
+  const m = s.match(re);
+  return m ? m[0] : def;
+}
+function detectAirline(blockText) {
+  const t = blockText.toLowerCase();
+  if (t.includes('latam')) return 'LATAM';
+  if (t.includes('gol')) return 'GOL';
+  if (t.includes('azul')) return 'AZUL';
+  return '';
+}
+function detectStops(blockText) {
+  // procura "sem paradas" | "0 parada" | "1 parada" | "2 paradas" etc.
+  const t = blockText.toLowerCase();
+  if (t.includes('sem paradas') || t.includes('direto')) return 0;
+  const m = t.match(/(\d+)\s*parad(a|as)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+async function autoScroll(page, { maxSteps = 30, step = 1200, pause = 400 } = {}) {
+  let last = 0;
+  for (let i = 0; i < maxSteps; i++) {
+    const h1 = await page.evaluate(() => document.scrollingElement.scrollHeight);
+    await page.evaluate((dy) => window.scrollBy(0, dy), step);
+    await page.waitForTimeout(pause);
+    const h2 = await page.evaluate(() => document.scrollingElement.scrollHeight);
+    if (h2 <= last) break;
+    last = h2;
   }
+  // volta ao topo (para layout previsível)
+  await page.evaluate(() => window.scrollTo(0, 0));
 }
 
-async function autoScroll(page, steps=20){
-  for (let i=0;i<steps;i++){
-    await page.evaluate(()=>window.scrollBy(0, window.innerHeight));
-    await page.waitForTimeout(350);
-  }
-}
+async function main() {
+  // --- Parâmetros via env ou argv
+  const ORIGIN = process.env.ORIGIN || process.argv[2] || 'GYN';
+  const DEST   = process.env.DEST   || process.argv[3] || 'CAC';
+  const DATE   = process.env.DATE   || process.argv[4] || '2025-11-30'; // AAAA-MM-DD
+  const ADT    = parseInt(process.env.ADT || '1', 10);  // adultos
+  const CHD    = parseInt(process.env.CHD || '0', 10);  // crianças
+  const INF    = parseInt(process.env.INF || '0', 10);  // bebês
+  const CABIN  = process.env.CABIN || 'Y';              // Y=Economy
+  const HEADLESS = process.env.HEADLESS !== 'false';
 
-async function main(){
-  const url = `https://www.vaidepromo.com.br/passagens-aereas/pesquisa/${ORIGIN}${DEST}${yymmdd(DATE)}/1/0/0/Y/`;
-  const stamp = new Date().toISOString().replace(/[:.]/g,"-");
-  const outDir = path.join("data", `${DATE}_${ORIGIN}-${DEST}`, stamp);
-  fs.mkdirSync(outDir, { recursive:true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const ym = yymmdd(DATE);
+  const routeTag = `${ORIGIN}-${DEST}`;
 
-  const browser = await chromium.launch({ headless:true });
+  const baseUrl = `https://www.vaidepromo.com.br/passagens-aereas/pesquisa/${ORIGIN}${DEST}${ym}/${ADT}/${CHD}/${INF}/${CABIN}/`;
+
+  console.log(`[i] Acessando: ${baseUrl}`);
+
+  const browser = await chromium.launch({
+    headless: HEADLESS,
+    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+  });
   const ctx = await browser.newContext({
-    locale: "pt-BR",
-    viewport: { width: 1366, height: 900 },
-    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36"
+    viewport: { width: 1440, height: 1200 },
+    locale: 'pt-BR',
   });
   const page = await ctx.newPage();
 
-  if (DEBUG) console.log("URL:", url);
-  await page.goto(url, { waitUntil:"domcontentloaded", timeout: 90_000 });
+  await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 120000 });
 
-  // Garante render do rótulo
-  await page.waitForSelector('span:has-text("Preço por adulto")', { timeout: 60_000 });
+  // Aguarda aparecer algum "Preço por adulto"
+  await page.waitForSelector('text=Preço por adulto', { timeout: 120000 });
 
-  await clickShowMore(page, 8);
-  await autoScroll(page, 20);
+  // Garante carregar mais resultados (scroll)
+  await autoScroll(page, { maxSteps: 40 });
 
-  // Auditoria
-  fs.writeFileSync(path.join(outDir,"page.html"), await page.content(), "utf8");
-  await page.screenshot({ path: path.join(outDir,"screenshot.png"), fullPage:true });
-
-  // Cada CARD: tem "Preço por adulto" e botão "Comprar"
-  const cards = page.locator(
-    'xpath=//div[.//span[normalize-space()="Preço por adulto"] and .//button[contains(normalize-space(.),"Comprar")]]'
+  // Tira screenshot e salva HTML bruto (útil para auditoria)
+  const outDir = path.join(
+    'data',
+    `${DATE}_${routeTag}`,
+    `${stamp}`
   );
-  const cardCount = await cards.count();
-  if (DEBUG) console.log("Cards:", cardCount);
+  await fsp.mkdir(outDir, { recursive: true });
+  await page.screenshot({ path: path.join(outDir, 'screenshot.png'), fullPage: true });
+  const html = await page.content();
+  await fsp.writeFile(path.join(outDir, 'page.html'), html, 'utf8');
 
-  const items = [];
-  for (let i=0;i<cardCount;i++){
-    const card = cards.nth(i);
+  // Coleta todos os spans do preço por adulto (classes ofuscadas, mas com prefixo fixo)
+  const priceLoc = page.locator('span[class*="pricePerAdultValueSection"]'); // ex.: _pricePerAdultValueSectionMoney_...
+  const n = await priceLoc.count();
+  console.log(`[i] Cards com preço localizados: ${n}`);
 
-    // Valor logo após o rótulo "Preço por adulto"
-    const priceSpan = card.locator(
-      'xpath=.//span[normalize-space()="Preço por adulto"]/following::span[contains(@class,"pricePerAdultValueSectionMoney")][1]'
-    );
-    const priceText = tidy(await priceSpan.innerText().catch(()=>"" ));
-    const price = parseBRL(priceText);
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    const span = priceLoc.nth(i);
 
-    // Ignora se não bateu um número válido
-    if (!Number.isFinite(price) || price <= 0) continue;
+    // Texto do preço (ex.: "R$ 926,41")
+    const priceText = (await span.textContent())?.trim() || '';
 
-    // Companhia
-    let airline = await card.locator('img[alt]').first().getAttribute("alt").catch(()=>null);
-    if (!airline) {
-      const txt = tidy(await card.innerText().catch(()=>"" ));
-      const m = txt.match(/\b(Gol|LATAM|Azul)\b/i);
-      airline = m ? m[0] : "";
-    }
-
-    // Horários: primeiros 2 HH:MM no card
-    const ctext = await card.innerText().catch(()=>"" );
-    const times = (ctext.match(/\b([01]\d|2[0-3]):[0-5]\d\b/g) || []).slice(0,2);
-    const dep = times[0] || "";
-    const arr = times[1] || "";
-
-    // Paradas
-    let stops = "";
-    const sm = ctext.match(/\b(Sem paradas|\d+\s+parad[ao]s?)\b/i);
-    if (sm) stops = tidy(sm[0]);
-
-    items.push({
-      airline: tidy(airline || ""),
-      price_brl: price,
-      price_label: priceText,
-      dep_time: dep,
-      arr_time: arr,
-      stops
+    // Sobe para um contêiner maior que contenha também "Preço por adulto"
+    const handle = await span.evaluateHandle((el) => {
+      let p = el.parentElement;
+      for (let k = 0; k < 8 && p; k++) {
+        try {
+          if (p.innerText && p.innerText.includes('Preço por adulto')) return p;
+        } catch {}
+        p = p.parentElement;
+      }
+      return el.parentElement || el;
     });
+
+    const blockText = await handle.evaluate((node) => node.innerText || '');
+    const price = brlToNumber(priceText);
+
+    // Heurísticas simples para demais campos
+    const times = (blockText.match(/\b([01]?\d|2[0-3]):[0-5]\d\b/g) || []).slice(0, 2);
+    const dep = times[0] || '';
+    const arr = times[1] || '';
+    const airline = detectAirline(blockText);
+    const stops = detectStops(blockText);
+
+    // Evita duplicatas simples (mesmo preço e mesmos horários)
+    const key = `${airline}|${dep}|${arr}|${price}`;
+    if (!rows.some(r => r._k === key)) {
+      rows.push({
+        airline,
+        iata: airline === 'GOL' ? 'G3' : airline === 'LATAM' ? 'LA' : airline === 'AZUL' ? 'AD' : '',
+        price_brl: price,
+        raw_price: priceText,
+        stops,
+        depart: dep,
+        arrive: arr,
+        _k: key
+      });
+    }
   }
 
-  // Ordena por menor preço e salva
-  const clean = items
-    .filter(x => Number.isFinite(x.price_brl) && x.price_brl > 0)
-    .sort((a,b)=>a.price_brl - b.price_brl);
+  // Ordena pelo menor preço
+  rows.sort((a, b) => (a.price_brl ?? 9e9) - (b.price_brl ?? 9e9));
 
-  const json = { date: DATE, route: `${ORIGIN}-${DEST}`, stamp, url, items: clean };
-  fs.writeFileSync(path.join(outDir,"results.json"), JSON.stringify(json, null, 2));
-
-  const header = ["airline","price_brl","dep_time","arr_time","stops"].join(";");
-  const lines  = clean.map(r => [r.airline, r.price_brl.toFixed(2), r.dep_time, r.arr_time, r.stops].join(";"));
-  fs.writeFileSync(path.join(outDir,"results.csv"), [header, ...lines].join("\n"), "utf8");
-
-  // Agregados
-  fs.writeFileSync(path.join(outDir,"meta.json"), JSON.stringify({
+  // Salva JSON
+  const resultJson = {
     date: DATE,
-    route: `${ORIGIN}-${DEST}`,
-    stamp, url,
-    count: clean.length,
-    min_price_brl: clean.length ? clean[0].price_brl : null,
-    all_prices_brl: clean.map(x=>x.price_brl)
-  }, null, 2));
+    route: routeTag,
+    stamp,
+    url: baseUrl,
+    count: rows.length,
+    min_price_brl: rows.length ? rows[0].price_brl : null,
+    results: rows.map(({ _k, ...r }) => r),
+  };
+  await fsp.writeFile(path.join(outDir, 'results.json'), JSON.stringify(resultJson, null, 2), 'utf8');
 
-  if (DEBUG) console.log("Itens válidos:", clean.length);
+  // Salva CSV
+  const csv = [
+    'airline,iata,price_brl,raw_price,stops,depart,arrive'
+  ].concat(
+    rows.map(r => [
+      r.airline,
+      r.iata,
+      r.price_brl ?? '',
+      (r.raw_price || '').replace(/,/g, ''),
+      r.stops ?? '',
+      r.depart,
+      r.arrive
+    ].join(','))
+  ).join('\n');
+
+  await fsp.writeFile(path.join(outDir, 'results.csv'), csv, 'utf8');
+
+  console.log(`[✓] Salvo em: ${outDir}`);
+  console.log(`[✓] Itens: ${rows.length} | Min BRL: ${resultJson.min_price_brl}`);
+
   await browser.close();
 }
 
-main().catch(err => { console.error(err); process.exit(1); });
+main().catch(async (err) => {
+  console.error('[ERR]', err);
+  process.exit(1);
+});
