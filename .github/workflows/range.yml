@@ -3,28 +3,16 @@ name: range-90d
 on:
   workflow_dispatch:
     inputs:
-      from:
-        description: "IATA origem"
-        required: true
-        default: "GYN"
-      to:
-        description: "IATA destino"
-        required: true
-        default: "CAC"
-      days:
-        description: "Dias para frente (a partir de hoje)"
-        required: true
-        default: "90"
-      delay_ms:
-        description: "Pausa entre dias (ms)"
-        required: true
-        default: "4000"
+      from:      { description: "IATA origem", required: true, default: "GYN" }
+      to:        { description: "IATA destino", required: true, default: "CAC" }
+      days:      { description: "Dias para frente", required: true, default: "90" }
+      delay_ms:  { description: "Pausa entre dias (ms)", required: true, default: "4000" }
 
 jobs:
   run:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # necessário pro commit automático
+      contents: write
 
     steps:
       - name: Checkout
@@ -38,12 +26,23 @@ jobs:
         with:
           node-version: 20
 
-      - name: Instalar dependências
+      - name: Debug – listar arquivos na raiz
         run: |
-          npm ci || npm i
+          pwd
+          ls -la
 
-      - name: Instalar browsers do Playwright
-        run: npx playwright install --with-deps
+      - name: Instalar dependências (se houver package.json)
+        run: |
+          if [ -f package.json ]; then
+            echo "package.json encontrado – instalando deps"
+            npm ci || npm i
+          else
+            echo "Sem package.json – pulando npm install"
+          fi
+
+      - name: Instalar browsers do Playwright (mesmo sem package.json)
+        run: |
+          npx -y playwright@1.48.2 install --with-deps
 
       - name: Rodar varredura (dia a dia)
         run: |
@@ -57,7 +56,6 @@ jobs:
             data/**
             public/results.csv
 
-      # opcional: também disponibiliza download como artefato
       - name: Upload artifact (opcional)
         if: always()
         uses: actions/upload-artifact@v4
