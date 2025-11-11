@@ -2,18 +2,41 @@ name: range-90d
 on:
   workflow_dispatch:
     inputs:
-      from: { description: "IATA origem", required: true, default: "GYN" }
-      to:   { description: "IATA destino", required: true, default: "CAC" }
-      days: { description: "Dias pra frente", required: true, default: "90" }
-      delay_ms: { description: "Pausa (ms)", required: true, default: "4000" }
+      from:      { description: "IATA origem", required: true, default: "GYN" }
+      to:        { description: "IATA destino", required: true, default: "CAC" }
+      days:      { description: "Dias pra frente", required: true, default: "90" }
+      delay_ms:  { description: "Pausa (ms)", required: true, default: "4000" }
+
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - run: npm ci || npm i
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # preciso pra dar commit de volta
+          persist-credentials: true
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar deps
+        run: npm ci || npm i
+
+      - name: Instalar browsers do Playwright (seu scraper precisa)
+        run: npx playwright install --with-deps
+
       - name: Rodar varredura
         run: |
-          node  run-range.cjs --from "${{ inputs.from }}" --to "${{ inputs.to }}" --days "${{ inputs.days }}" --delay-ms "${{ inputs.delay_ms }}"
+          node run-range.cjs --from "${{ inputs.from }}" --to "${{ inputs.to }}" --days "${{ inputs.days }}" --delay-ms "${{ inputs.delay_ms }}"
+
+      # >>> Opção B: commit automático dos arquivos gerados <<<
+      - name: Commit e push dos dados
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "data: ${ { inputs.from } }-${ { inputs.to } } (${ { github.run_number } })"
+          file_pattern: |
+            data/**
+            public/results.csv
