@@ -6,7 +6,7 @@ on:
       - "data/**"
   workflow_dispatch: {}
   schedule:
-    - cron: "*/720 * * * *"
+    - cron: "0 */12 * * *"  # a cada 12h
 
 permissions:
   contents: write
@@ -49,60 +49,61 @@ jobs:
             return out;
           }
 
-          // CSV com todos os campos entre aspas e ; como separador
-          function parseCSVQuotedSemicolon(text){
+          function parseCSVSemi(text){
             const lines = text.trim().split(/\r?\n/).filter(Boolean);
-            if(!lines.length) return { header:[], rows:[] };
-            const parseLine = (line) => {
-              const fields=[];
-              const re = /"((?:[^"]|"")*)"(?:;|$)/g;
-              let m;
-              while((m=re.exec(line))!==null){
-                fields.push(m[1].replace(/""/g,'"'));
+            const splitSemi = (line) => {
+              const out=[]; let cur=''; let inQ=false;
+              for (let i=0;i<line.length;i++){
+                const ch=line[i];
+                if (ch === '"'){
+                  if (inQ && line[i+1] === '"'){ cur+='"'; i++; }
+                  else inQ = !inQ;
+                } else if (ch === ';' && !inQ){
+                  out.push(cur); cur='';
+                } else {
+                  cur += ch;
+                }
               }
-              return fields;
+              out.push(cur);
+              return out.map(s=>s.replace(/^\s+|\s+$/g,''));
             };
-            const header = parseLine(lines.shift());
-            const rows = lines
-              .map(parseLine)
+            if(!lines.length) return { header:[], rows:[] };
+            const header = splitSemi(lines[0]).map(h=>String(h).trim().toLowerCase());
+            const rows = lines.slice(1)
+              .map(splitSemi)
               .filter(arr=>arr.length===header.length)
-              .map(arr=>Object.fromEntries(header.map((h,i)=>[String(h).trim().toLowerCase(), arr[i]])));
+              .map(arr=>Object.fromEntries(header.map((h,i)=>[h, arr[i]])));
             return { header, rows };
           }
 
-          // >>> FIX: não remover ponto decimal quando já vier em "1282.25"
           function normalizePrice(v){
-            if(v==null || v==='') return null;
-            let s = String(v).trim();
-
-            // tira R$, espaços e qualquer coisa não numérica (mantendo . , -)
-            s = s.replace(/[^\d.,-]/g, '');
-
-            // caso BR: termina com ",dd" (ex.: 1.282,25)
-            if (/,\\d{2}$/.test(s) || (s.includes(',') && !s.includes('.'))) {
-              // remove apenas pontos de milhar e troca vírgula por ponto
-              s = s.replace(/\.(?=\d{3}(?:\D|$))/g,'');
-              s = s.replace(',', '.');
-            } else {
-              // assume ponto como decimal (ex.: 1282.25 ou 1,234.56)
-              // remove vírgulas de milhar (1,234.56 -> 1234.56)
-              s = s.replace(/,(?=\d{3}(?:\D|$))/g, '');
-              // mantém o ponto decimal
+            if(v==null) return null;
+            let s = String(v).trim().replace(/[^\d.,-]/g, '');
+            const lastDot = s.lastIndexOf('.');
+            const lastCom = s.lastIndexOf(',');
+            const decIdx  = Math.max(lastDot, lastCom);
+            if (decIdx >= 0) {
+              const decSep = s[decIdx];
+              const thousandSep = decSep === '.' ? ',' : '.';
+              s = s.replace(new RegExp('\\' + thousandSep, 'g'), '');
+              if (decSep === ',') s = s.replace(',', '.');
             }
-
             const n = Number.parseFloat(s);
             return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
           }
 
           const files = listResultsFiles('data');
+          console.log('[aggregate] encontrei', files.length, 'results.csv');
+
           const byDate = new Map(); // date -> [prices]
 
           for(const fp of files){
             try{
               const txt = fs.readFileSync(fp,'utf8');
-              const { rows } = parseCSVQuotedSemicolon(txt);
+              const { rows } = parseCSVSemi(txt);
+              console.log('[aggregate]', fp, 'linhas:', rows.length);
               for(const r of rows){
-                const date = r.date || '';
+                const date = (r.date || '').trim();
                 const price = normalizePrice(r.price_brl);
                 if(!date || price==null) continue;
                 if(!byDate.has(date)) byDate.set(date, []);
@@ -133,6 +134,12 @@ jobs:
           console.log(`[aggregate] dias: ${dates.length}, linhas: ${out.length}`);
           NODE
 
+      - name: Upload aggregate.csv
+        uses: actions/upload-artifact@v4
+        with:
+          name: aggregate
+          path: public/aggregate.csv
+
       - name: Commit & push public/aggregate.csv (if changed)
         shell: bash
         run: |
@@ -142,6 +149,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "Sem mudanças para commitar."
           else
-            git commit -m "build(aggregate): corrigir parsing de price_brl (respeita ponto decimal)"
+            git commit -m "build(aggregate): fix cron + price parsing"
             git push
           fi
