@@ -1,124 +1,165 @@
-// scripts/capture.js (ESM) — Playwright com seletor estável "Preço por adulto"
-import { chromium } from 'playwright';
-import fs from 'fs';
-import path from 'path';
-import { ensureDir, writeJSON, writeText, autoScroll, parseBRL, toCSV } from './utils.js';
+// captura direto do DOM: "Preço por adulto"
+import fs from "fs";
+import path from "path";
+import { chromium } from "playwright";
 
-function buildUrl({ origin, dest, date }) {
-  // date: YYYY-MM-DD → precisa virar YYYYMMDD
-  const yyyymmdd = date.replaceAll('-', '');
-  // 1 adulto / 0 crianças / 0 bebês / Y (econômica)
-  return `https://www.vaidepromo.com.br/passagens-aereas/pesquisa/${origin}${dest}${yyyymmdd}/1/0/0/Y/`;
+// ====== ENTRADAS por ENV ======
+const ORIGIN = process.env.ORIGIN || "GYN";
+const DEST   = process.env.DEST   || "CAC";
+const DATE   = process.env.DATE   || "2025-11-30";    // AAAA-MM-DD
+const DEBUG  = /^1|true$/i.test(process.env.DEBUG || "1");
+
+// ====== HELPERS ======
+function ensureDir(p) {
+  fs.mkdirSync(p, { recursive: true });
+}
+function stampNow() {
+  const z = new Date().toISOString().replace(/:/g, "-").replace(".", "-");
+  return z; // ex: 2025-11-10T23-41-25-411Z
+}
+function parseBRL(str) {
+  if (!str) return NaN;
+  const clean = str.replace(/[^\d,.\-]/g, "");
+  const norm = clean.replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(",", ".");
+  return Number(norm);
+}
+function buildUrl(origin, dest, ymd) {
+  // https://www.vaidepromo.com.br/passagens-aereas/pesquisa/GYNCACYYMMDD/1/0/0/Y/
+  const [y, m, d] = ymd.split("-");
+  const ddmmyy = `${d}${m}${String(y).slice(-2)}`;
+  return `https://www.vaidepromo.com.br/passagens-aereas/pesquisa/${origin}${dest}${ddmmyy}/1/0/0/Y/`;
+}
+function outFolder(base, date, route) {
+  const stamp = stampNow();
+  const folder = path.join(base, `${date}_${route}`, stamp);
+  ensureDir(folder);
+  return { folder, stamp };
+}
+function writeCSV(csvPath, rows) {
+  const csv = rows
+    .map(r => r.map(v => {
+      const s = v == null ? "" : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    }).join(","))
+    .join("\n") + "\n";
+  fs.writeFileSync(csvPath, csv);
 }
 
-function outBase({ date, route, stamp }) {
-  return path.join('data', `${date}_${route}`, stamp);
-}
+// ====== CAPTURA ======
+const ROUTE = `${ORIGIN}-${DEST}`;
+const URL = buildUrl(ORIGIN, DEST, DATE);
+const BASE = "data";
 
-function nowStamp() {
-  const d = new Date();
-  return d.toISOString().replaceAll(':', '-').replaceAll('.', '-');
-}
+if (DEBUG) console.log({ ORIGIN, DEST, DATE, URL });
 
-async function extractPricesFromDOM(page) {
-  // Aguarda aparecer o rótulo "Preço por adulto"
-  await page.locator('span:has-text("Preço por adulto")').first().waitFor({ timeout: 60000 }).catch(() => {});
-  // Faz scroll pra carregar todos os cards
-  await autoScroll(page, { step: 900, idleMs: 700, max: 40 });
+const browser = await chromium.launch({ headless: true });
+const ctx = await browser.newContext({
+  locale: "pt-BR",
+  timezoneId: "America/Sao_Paulo",
+});
+const page = await ctx.newPage();
 
-  // Card que contém o rótulo
-  const cards = page.locator('div:has(span:has-text("Preço por adulto"))');
-  const count = await cards.count();
-  const prices = [];
+try {
+  const { folder, stamp } = outFolder(BASE, DATE, ROUTE);
 
-  for (let i = 0; i < count; i++) {
-    const card = cards.nth(i);
+  await page.goto(URL, { waitUntil: "domcontentloaded" });
+  await page.waitForLoadState("networkidle");
 
-    // alvo preferido: class*="pricePerAdultValueSectionMoney" (hash muda, então usamos "contains")
-    let priceText = null;
-    const moneySpan = card.locator('[class*="pricePerAdultValueSectionMoney"]').first();
-    if (await moneySpan.count()) {
-      priceText = (await moneySpan.innerText()).trim();
-    } else {
-      // fallback: pega primeiro span com "R$"
-      const anyMoney = card.locator('span:has-text("R$")').first();
-      if (await anyMoney.count()) {
-        priceText = (await anyMoney.innerText()).trim();
-      }
-    }
-
-    const value = parseBRL(priceText);
-    if (value != null) prices.push(value);
+  // scroll até o fim para carregar todos os cards
+  let lastH = 0;
+  for (let i = 0; i < 20; i++) {
+    const h = await page.evaluate(() => document.body.scrollHeight);
+    if (h === lastH) break;
+    lastH = h;
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(600);
   }
 
-  // ordena e remove duplicados
-  const uniqueSorted = Array.from(new Set(prices)).sort((a, b) => a - b);
-  return uniqueSorted;
-}
+  // salva auditoria
+  fs.writeFileSync(path.join(folder, "page.html"), await page.content());
+  await page.screenshot({ path: path.join(folder, "screenshot.png"), fullPage: true });
 
-async function main() {
-  const ORIGIN = process.env.ORIGIN?.trim() || 'GYN';
-  const DEST   = process.env.DEST?.trim()   || 'CAC';
-  const DATE   = process.env.DATE?.trim()   || '2025-11-30'; // YYYY-MM-DD
-  const ROUTE  = `${ORIGIN}-${DEST}`;
-  const STAMP  = process.env.STAMP?.trim()  || nowStamp();
-  const DEBUG  = process.env.DEBUG === '1';
+  // todos os "cards" que contêm "Preço por adulto"
+  const cards = page.locator('div:has(span:has-text("Preço por adulto"))');
+  const n = await cards.count();
 
-  const url = buildUrl({ origin: ORIGIN, dest: DEST, date: DATE });
-  const base = outBase({ date: DATE, route: ROUTE, stamp: STAMP });
-  ensureDir(base);
+  const results = [];
+  for (let i = 0; i < n; i++) {
+    const card = cards.nth(i);
 
-  const browser = await chromium.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
-  });
+    // --- preço por adulto ---
+    let priceText = "";
+    const money = card.locator('span[class*="pricePerAdultValueSectionMoney"]').first();
+    if (await money.count()) {
+      priceText = (await money.innerText()).trim();
+    } else {
+      // fallback: qualquer span com "R$"
+      const alt = card.locator('xpath=.//span[contains(normalize-space(.),"R$")]').first();
+      if (await alt.count()) priceText = (await alt.innerText()).trim();
+    }
+    const price = parseBRL(priceText);
+    if (!Number.isFinite(price)) continue;
 
-  const ctx = await browser.newContext({
-    locale: 'pt-BR',
-    timezoneId: 'America/Sao_Paulo',
-    viewport: { width: 1440, height: 900 },
-  });
-  const page = await ctx.newPage();
+    // --- cia ---
+    let airline = "";
+    const logo = card.locator("img[alt]").first();
+    if (await logo.count()) {
+      airline = (await logo.getAttribute("alt")) || "";
+    }
+    if (!airline) {
+      const txt = (await card.innerText()).toLowerCase();
+      if (txt.includes("latam")) airline = "LATAM";
+      else if (txt.includes("gol")) airline = "GOL";
+      else if (txt.includes("azul")) airline = "AZUL";
+    }
 
-  if (DEBUG) console.log('Abrindo URL:', url);
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
+    // --- horários (pega os 2 primeiros HH:MM) ---
+    const times = await card.locator('text=/\\b\\d{2}:\\d{2}\\b/').allInnerTexts();
+    const uniqTimes = [...new Set(times.map(t => t.match(/\b\d{2}:\d{2}\b/)?.[0]).filter(Boolean))];
+    const dep = uniqTimes[0] || "";
+    const arr = uniqTimes[1] || "";
 
-  // dá um respiro pra animações/fetches
-  await page.waitForTimeout(2500);
-  try { await page.waitForLoadState('networkidle', { timeout: 15000 }); } catch {}
+    // --- paradas ---
+    let stops = "";
+    const blockText = (await card.innerText()).toLowerCase();
+    if (blockText.includes("direto")) stops = "0";
+    const mPar = blockText.match(/(\d+)\s+parad[ao]s?/);
+    if (mPar) stops = mPar[1];
 
-  // Extrai preços do DOM
-  const prices = await extractPricesFromDOM(page);
+    results.push({
+      price_brl: price,
+      airline,
+      dep_time: dep,
+      arr_time: arr,
+      stops
+    });
+  }
 
-  // Auditoria
-  const html = await page.content();
-  writeText(path.join(base, 'page.html'), html);
-  await page.screenshot({ path: path.join(base, 'screenshot.png'), fullPage: true });
+  // ordena por preço
+  results.sort((a, b) => a.price_brl - b.price_brl);
 
-  await browser.close();
-
-  // Resumo
-  const data = {
+  // salva JSON
+  const outJson = {
     date: DATE,
     route: ROUTE,
-    stamp: STAMP,
-    url,
-    min_price_brl: prices.length ? prices[0] : null,
-    all_prices_brl: prices
+    stamp,
+    url: URL,
+    count: results.length,
+    flights: results
   };
+  fs.writeFileSync(path.join(folder, "results.json"), JSON.stringify(outJson, null, 2));
 
-  // Salva JSON
-  writeJSON(path.join(base, 'results.json'), data);
+  // salva CSV (vírgula como separador)
+  const rows = [["date", "route", "stamp", "airline", "price_brl", "dep_time", "arr_time", "stops"]];
+  for (const f of results) {
+    rows.push([DATE, ROUTE, stamp, f.airline || "", f.price_brl, f.dep_time, f.arr_time, f.stops]);
+  }
+  writeCSV(path.join(folder, "results.csv"), rows);
 
-  // Salva CSV (um preço por linha)
-  const rows = prices.map(p => ({ date: DATE, route: ROUTE, stamp: STAMP, price_brl: p }));
-  const csv = toCSV(rows, ['date', 'route', 'stamp', 'price_brl']);
-  writeText(path.join(base, 'results.csv'), csv);
-
-  if (DEBUG) console.log(JSON.stringify(data, null, 2));
+  console.log(`OK: ${results.length} voos. Pasta: ${path.join(BASE, `${DATE}_${ROUTE}`, stamp)}`);
+} catch (err) {
+  console.error("Capture error:", err);
+  throw err;
+} finally {
+  await browser.close();
 }
-
-main().catch(err => {
-  console.error('ERRO no capture.js:', err);
-  process.exit(1);
-});
