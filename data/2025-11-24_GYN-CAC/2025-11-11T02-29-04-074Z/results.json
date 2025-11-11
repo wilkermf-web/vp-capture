@@ -1,0 +1,136 @@
+{
+  "date": "2025-11-24",
+  "route": "GYN-CAC",
+  "stamp": "2025-11-11T02-29-04-074Z",
+  "url": "https://www.vaidepromo.com.br/passagens-aereas/pesquisa/GYNCAC251124/1/0/0/Y/",
+  "count": 14,
+  "min_price_brl": 925.84,
+  "results": [
+    {
+      "airline": "",
+      "iata": "",
+      "price_brl": 925.84,
+      "raw_price": "R$ 925,84",
+      "stops": null,
+      "depart": "",
+      "arrive": ""
+    },
+    {
+      "airline": "",
+      "iata": "",
+      "price_brl": 1014.9,
+      "raw_price": "R$ 1.014,90",
+      "stops": null,
+      "depart": "",
+      "arrive": ""
+    },
+    {
+      "airline": "",
+      "iata": "",
+      "price_brl": 1033.1,
+      "raw_price": "R$ 1.033,10",
+      "stops": null,
+      "depart": "",
+      "arrive": ""
+    },
+    {
+      "airline": "",
+      "iata": "",
+      "price_brl": 1121.66,
+      "raw_price": "R$ 1.121,66",
+      "stops": null,
+      "depart": "",
+      "arrive": ""
+    },
+    {
+      "airline": "",
+      "iata": "",
+      "price_brl": 1263.9,
+      "raw_price": "R$ 1.263,90",
+      "stops": null,
+      "depart": "",
+      "arrive": ""
+    },
+    {
+      "airline": "",
+      "iata": "",
+      "price_brl": 1510.9,
+      "raw_price": "R$ 1.510,90",
+      "stops": null,
+      "depart": "",
+      "arrive": ""
+    },
+    {
+      "airline": "",
+      "iata": "",
+      "price_brl": 1848.9,
+      "raw_price": "R$ 1.848,90",
+      "stops": null,
+      "depart": "",
+      "arrive": ""
+    },
+    {
+      "airline": "",
+      "iata": "",
+      "price_brl": 1894.9,
+      "raw_price": "R$ 1.894,90",
+      "stops": null,
+      "depart": "",
+      "arrive": ""
+    },
+    {
+      "airline": "",
+      "iata": "",
+      "price_brl": 2135.05,
+      "raw_price": "R$ 2.135,05",
+      "stops": null,
+      "depart": "",
+      "arrive": ""
+    },
+    {
+      "airline": "",
+      "iata": "",
+      "price_brl": 2280.85,
+      "raw_price": "R$ 2.280,85",
+      "stops": null,
+      "depart": "",
+      "arrive": ""
+    },
+    {
+      "airline": "",
+      "iata": "",
+      "price_brl": 2432.9,
+      "raw_price": "R$ 2.432,90",
+      "stops": null,
+      "depart": "",
+      "arrive": ""
+    },
+    {
+      "airline": "",
+      "iata": "",
+      "price_brl": 3239.89,
+      "raw_price": "R$ 3.239,89",
+      "stops": null,
+      "depart": "",
+      "arrive": ""
+    },
+    {
+      "airline": "",
+      "iata": "",
+      "price_brl": 3412.69,
+      "raw_price": "R$ 3.412,69",
+      "stops": null,
+      "depart": "",
+      "arrive": ""
+    },
+    {
+      "airline": "",
+      "iata": "",
+      "price_brl": 3497.9,
+      "raw_price": "R$ 3.497,90",
+      "stops": null,
+      "depart": "",
+      "arrive": ""
+    }
+  ]
+}
