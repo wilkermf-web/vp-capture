@@ -1,8 +1,9 @@
-// scripts/capture.js (ESM) — abre Vaidepromo, extrai "Preço por adulto", salva arquivos
+// scripts/capture.js (ESM) — abre Vaidepromo, extrai "Preço por adulto" e salva os arquivos do dia
 import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 
+/* ------------------------ helpers de arquivo/CSV ------------------------ */
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
@@ -18,6 +19,8 @@ function toCSV(rows, headers) {
   const body = rows.map(r => headers.map(h => `"${esc(r[h])}"`).join(';')).join('\n');
   return head + '\n' + body + '\n';
 }
+
+/* --------------------------- parsing/scroll ----------------------------- */
 function parseBRL(text) {
   if (!text) return null;
   const t = String(text)
@@ -28,6 +31,7 @@ function parseBRL(text) {
   const n = Number.parseFloat(t);
   return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
 }
+
 async function autoScroll(page, { step = 900, idleMs = 700, max = 40 } = {}) {
   let lastY = -1;
   for (let i = 0; i < max; i++) {
@@ -42,26 +46,37 @@ async function autoScroll(page, { step = 900, idleMs = 700, max = 40 } = {}) {
   await page.evaluate(() => window.scrollTo(0, 0));
 }
 
+/* ----------------------------- caminhos -------------------------------- */
 function buildUrl({ origin, dest, date }) {
-  // date: YYYY-MM-DD -> YYYYMMDD
-  const yyyymmdd = date.replaceAll('-', '');
-  // 1 adulto / 0 crianças / 0 bebês / Y (econômica)
-  return `https://www.vaidepromo.com.br/passagens-aereas/pesquisa/${origin}${dest}${yyyymmdd}/1/0/0/Y/`;
+  // date chega "YYYY-MM-DD" e precisa ir "YYMMDD"
+  const toYYMMDD = (dateStr) => {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const yy = String(y).slice(-2);
+    return yy + String(m).padStart(2, '0') + String(d).padStart(2, '0');
+  };
+  const yymmdd = toYYMMDD(date);
+  const ORI = String(origin).toUpperCase().trim();
+  const DES = String(dest).toUpperCase().trim();
+  // Ex.: https://www.vaidepromo.com.br/passagens-aereas/pesquisa/GYNCAC251130/1/0/0/Y/
+  return `https://www.vaidepromo.com.br/passagens-aereas/pesquisa/${ORI}${DES}${yymmdd}/1/0/0/Y/`;
 }
+
 function outBase({ date, route, stamp }) {
   return path.join('data', `${date}_${route}`, stamp);
 }
+
 function nowStamp() {
   return new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-');
 }
 
+/* -------------------------- extração de preços -------------------------- */
 async function extractPricesFromDOM(page) {
-  // Espera aparecer qualquer card que contenha o rótulo:
+  // Aguarda aparecer algum bloco com rótulo "Preço por adulto"
   await page.locator('span:has-text("Preço por adulto")').first().waitFor({ timeout: 60000 }).catch(() => {});
-  // Garante lazy-load/render:
+  // Garante que todos os cards renderizaram
   await autoScroll(page);
 
-  // Cada card que contem o rótulo
+  // Cada card que tem o rótulo
   const cards = page.locator('div:has(span:has-text("Preço por adulto"))');
   const count = await cards.count();
   const prices = [];
@@ -69,13 +84,13 @@ async function extractPricesFromDOM(page) {
   for (let i = 0; i < count; i++) {
     const card = cards.nth(i);
 
-    // alvo preferido: class*="pricePerAdultValueSectionMoney"
+    // alvo preferido: class que contém "pricePerAdultValueSectionMoney" (hash muda)
     let priceText = null;
     const moneySpan = card.locator('[class*="pricePerAdultValueSectionMoney"]').first();
     if (await moneySpan.count()) {
       priceText = (await moneySpan.innerText()).trim();
     } else {
-      // fallback: primeiro span com "R$"
+      // fallback: primeiro span com "R$" dentro do card
       const anyMoney = card.locator('span:has-text("R$")').first();
       if (await anyMoney.count()) {
         priceText = (await anyMoney.innerText()).trim();
@@ -90,8 +105,9 @@ async function extractPricesFromDOM(page) {
   return Array.from(new Set(prices)).sort((a, b) => a - b);
 }
 
+/* -------------------------------- main ---------------------------------- */
 async function main() {
-  // Inputs (podem vir de env ou ficam nos defaults)
+  // Variáveis de entrada (env) com defaults
   const ORIGIN = process.env.ORIGIN?.trim() || 'GYN';
   const DEST   = process.env.DEST?.trim()   || 'CAC';
   const DATE   = process.env.DATE?.trim()   || '2025-11-30'; // YYYY-MM-DD
@@ -116,15 +132,13 @@ async function main() {
 
   if (DEBUG) console.log('Abrindo URL:', url);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
-
-  // respira um pouco para requests extras/animações
-  await page.waitForTimeout(2500);
+  await page.waitForTimeout(2500); // respira p/ requests/anim.
   try { await page.waitForLoadState('networkidle', { timeout: 15000 }); } catch {}
 
   // Extrai do DOM
   const prices = await extractPricesFromDOM(page);
 
-  // Auditoria
+  // Auditoria (sempre salva)
   writeText(path.join(base, 'page.html'), await page.content());
   await page.screenshot({ path: path.join(base, 'screenshot.png'), fullPage: true });
 
