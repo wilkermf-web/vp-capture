@@ -1,3 +1,29 @@
+// --- no topo do scrape-vaidepromo.js ---
+const fs = require('node:fs');
+const path = require('node:path');
+
+function getArg(flag, def = null) {
+  const i = process.argv.indexOf(flag);
+  return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : def;
+}
+
+const FROM = getArg('--from', process.env.FROM_IATA);
+const TO = getArg('--to', process.env.TO_IATA);
+const DATE = getArg('--date', process.env.DEPART_DATE); // yyyy-mm-dd
+
+// Diretório onde salvar (screenshots, json, csv do dia)
+let OUT = getArg('--out', process.env.OUTPUT_DIR);
+if (!OUT) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  OUT = path.join('data', `${DATE}_${FROM}-${TO}`, stamp);
+}
+fs.mkdirSync(OUT, { recursive: true });
+
+// Agora, sempre que salvar arquivo, use `OUT`:
+// ex.: fs.writeFileSync(path.join(OUT, 'result.json'), JSON.stringify(data));
+
+
+
 // scripts/scrape-vaidepromo.js
 // Captura preços "Preço por adulto" direto do DOM do Vaidepromo (Playwright)
 
