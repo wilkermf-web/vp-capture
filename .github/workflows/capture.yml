@@ -1,0 +1,102 @@
+name: Capture Vaidepromo
+
+on:
+  workflow_dispatch:
+    inputs:
+      origin:
+        description: "IATA origem (ex: GYN)"
+        required: false
+        default: GYN
+      dest:
+        description: "IATA destino (ex: CAC)"
+        required: false
+        default: CAC
+      start_date:
+        description: "Data inicial (AAAA-MM-DD). Deixe vazio para 'hoje'."
+        required: false
+        default: ""
+      days:
+        description: "Quantos dias (ex: 90)"
+        required: false
+        default: "90"
+      delay_ms:
+        description: "Pausa entre dias (ms)"
+        required: false
+        default: "3500"
+      debug:
+        description: "DEBUG=1 para logs extras"
+        required: false
+        default: "0"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  capture-and-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install deps
+        run: npm ci || npm i
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Resolve inputs
+        id: cfg
+        shell: bash
+        run: |
+          ORIGIN="${{ github.event.inputs.origin }}"
+          DEST="${{ github.event.inputs.dest }}"
+          START_DATE="${{ github.event.inputs.start_date }}"
+          DAYS="${{ github.event.inputs.days }}"
+          DELAY_MS="${{ github.event.inputs.delay_ms }}"
+          DEBUG="${{ github.event.inputs.debug }}"
+          : "${ORIGIN:=GYN}"
+          : "${DEST:=CAC}"
+          : "${DAYS:=90}"
+          : "${DELAY_MS:=3500}"
+          : "${DEBUG:=0}"
+          echo "origin=$ORIGIN"     >> $GITHUB_OUTPUT
+          echo "dest=$DEST"         >> $GITHUB_OUTPUT
+          echo "start_date=$START_DATE" >> $GITHUB_OUTPUT
+          echo "days=$DAYS"         >> $GITHUB_OUTPUT
+          echo "delay_ms=$DELAY_MS" >> $GITHUB_OUTPUT
+          echo "debug=$DEBUG"       >> $GITHUB_OUTPUT
+
+      - name: Run range (dia a dia)
+        env:
+          ORIGIN:     ${{ steps.cfg.outputs.origin }}
+          DEST:       ${{ steps.cfg.outputs.dest }}
+          START_DATE: ${{ steps.cfg.outputs.start_date }}
+          DAYS:       ${{ steps.cfg.outputs.days }}
+          DELAY_MS:   ${{ steps.cfg.outputs.delay_ms }}
+          DEBUG:      ${{ steps.cfg.outputs.debug }}
+        run: npm run range
+
+      - name: Commit & push data
+        shell: bash
+        run: |
+          git config user.name  "${GITHUB_ACTOR}"
+          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Sem mudanças para commitar."
+          else
+            MSG="capture-range: ${{ steps.cfg.outputs.origin }}-${{ steps.cfg.outputs.dest }} start=${{ steps.cfg.outputs.start_date || 'today' }} days=${{ steps.cfg.outputs.days }}"
+            git commit -m "$MSG"
+            git push
+          fi
