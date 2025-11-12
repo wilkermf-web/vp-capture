@@ -1,18 +1,22 @@
-name: Aggregate results.csv into public/aggregate.csv
+name: Build snapshot YYYY-MM-DD_FROM-TO.csv
 
 on:
-  push:
-    paths:
-      - "data/**"
-  workflow_dispatch: {}
-  schedule:
-    - cron: "0 */12 * * *"  # a cada 12h
+  workflow_dispatch:
+    inputs:
+      from:
+        description: "IATA de origem"
+        required: true
+        default: "GYN"
+      to:
+        description: "IATA de destino"
+        required: true
+        default: "CAC"
 
 permissions:
   contents: write
 
 jobs:
-  build-aggregate:
+  build-snapshot:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -26,7 +30,11 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Aggregate data/**/results.csv -> public/aggregate.csv (somente data e valores)
+      - name: Gerar snapshot único em public/YYYY-MM-DD_FROM-TO.csv
+        env:
+          ROUTE_FROM: ${{ github.event.inputs.from }}
+          ROUTE_TO:   ${{ github.event.inputs.to }}
+          TZ: America/Sao_Paulo  # "hoje" no fuso BR
         run: |
           node - <<'NODE'
           const fs = require('fs');
@@ -49,6 +57,7 @@ jobs:
             return out;
           }
 
+          // parser ; com aspas opcionais
           function parseCSVSemi(text){
             const lines = text.trim().split(/\r?\n/).filter(Boolean);
             const splitSemi = (line) => {
@@ -65,7 +74,7 @@ jobs:
                 }
               }
               out.push(cur);
-              return out.map(s=>s.replace(/^\s+|\s+$/g,''));
+              return out.map(s=>s.trim());
             };
             if(!lines.length) return { header:[], rows:[] };
             const header = splitSemi(lines[0]).map(h=>String(h).trim().toLowerCase());
@@ -76,6 +85,7 @@ jobs:
             return { header, rows };
           }
 
+          // normaliza 1.234,56 | 1,234.56 | 1234.56
           function normalizePrice(v){
             if(v==null) return null;
             let s = String(v).trim().replace(/[^\d.,-]/g, '');
@@ -92,8 +102,23 @@ jobs:
             return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
           }
 
-          const files = listResultsFiles('data');
-          console.log('[aggregate] encontrei', files.length, 'results.csv');
+          function todayStr(tz='America/Sao_Paulo'){
+            const parts = new Intl.DateTimeFormat('en-CA', {
+              timeZone: tz, year:'numeric', month:'2-digit', day:'2-digit'
+            }).formatToParts(new Date());
+            const bag = Object.fromEntries(parts.filter(p=>p.type!=='literal').map(p=>[p.type,p.value]));
+            return `${bag.year}-${bag.month}-${bag.day}`;
+          }
+
+          const FROM = (process.env.ROUTE_FROM || 'GYN').toUpperCase();
+          const TO   = (process.env.ROUTE_TO   || 'CAC').toUpperCase();
+          const ROUTE = `${FROM}-${TO}`;
+
+          const all = listResultsFiles('data');
+          // filtra apenas pastas que contenham _FROM-TO no caminho
+          const files = all.filter(fp =>
+            fp.includes(`_${ROUTE}${path.sep}`) || fp.includes(`_${ROUTE}/`) || fp.includes(`_${ROUTE}\\`)
+          );
 
           const byDate = new Map(); // date -> [prices]
 
@@ -101,7 +126,6 @@ jobs:
             try{
               const txt = fs.readFileSync(fp,'utf8');
               const { rows } = parseCSVSemi(txt);
-              console.log('[aggregate]', fp, 'linhas:', rows.length);
               for(const r of rows){
                 const date = (r.date || '').trim();
                 const price = normalizePrice(r.price_brl);
@@ -114,41 +138,34 @@ jobs:
             }
           }
 
+          // dedup + ordena preços por dia
           const dates = Array.from(byDate.keys()).sort();
           for(const d of dates){
-            const uniqueSorted = Array.from(new Set(byDate.get(d))).sort((a,b)=>a-b);
-            byDate.set(d, uniqueSorted);
+            byDate.set(d, Array.from(new Set(byDate.get(d))).sort((a,b)=>a-b));
           }
 
           ensureDir('public');
-          const out = [];
-          out.push('"date";"price_brl"');
-          for(let idx=0; idx<dates.length; idx++){
-            const d = dates[idx];
-            for(const p of byDate.get(d)){
-              out.push(`"${d}";"${p.toFixed(2)}"`);
-            }
-            if(idx < dates.length-1) out.push('');
+          const lines = ['"date";"price_brl"'];
+          for(let i=0;i<dates.length;i++){
+            const d = dates[i];
+            for(const p of byDate.get(d)) lines.push(`"${d}";"${p.toFixed(2)}"`);
+            if(i<dates.length-1) lines.push('');
           }
-          fs.writeFileSync(path.join('public','aggregate.csv'), out.join('\n')+'\n', 'utf8');
-          console.log(`[aggregate] dias: ${dates.length}, linhas: ${out.length}`);
+
+          const snapshot = `${todayStr()}_${ROUTE}.csv`;
+          fs.writeFileSync(path.join('public', snapshot), lines.join('\n')+'\n', 'utf8');
+          console.log(`[snapshot] criado public/${snapshot} | dias=${dates.length} | linhas=${lines.length}`);
           NODE
 
-      - name: Upload aggregate.csv
-        uses: actions/upload-artifact@v4
-        with:
-          name: aggregate
-          path: public/aggregate.csv
-
-      - name: Commit & push public/aggregate.csv (if changed)
+      - name: Commit & push snapshot (se mudou)
         shell: bash
         run: |
           git config user.name  "${GITHUB_ACTOR}"
           git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
-          git add public/aggregate.csv
+          git add public/*.csv
           if git diff --cached --quiet; then
             echo "Sem mudanças para commitar."
           else
-            git commit -m "build(aggregate): fix cron + price parsing"
+            git commit -m "snapshot: ${{ github.event.inputs.from }}-${{ github.event.inputs.to }} (apenas arquivo do dia)"
             git push
           fi
