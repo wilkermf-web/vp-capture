@@ -1,0 +1,50 @@
+name: Filter CSV by price_brl
+
+on:
+  workflow_dispatch:
+    inputs:
+      csv_file:
+        description: 'File name inside public/ (e.g. aggregate.csv)'
+        required: true
+        default: 'aggregate.csv'
+      max_price_brl:
+        description: 'Max price_brl to keep (e.g. 400)'
+        required: true
+        default: '400'
+
+permissions:
+  contents: write
+
+jobs:
+  filter-price:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run price filter
+        run: |
+          node filter-by-price.js "${{ inputs.csv_file }}" "${{ inputs.max_price_brl }}"
+
+      - name: Commit filtered file (resumo/)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add "resumo/${{ inputs.csv_file }}"
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Filter ${{ inputs.csv_file }} with price_brl <= ${{ inputs.max_price_brl }}"
+            git push
+          fi
