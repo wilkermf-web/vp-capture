@@ -1,14 +1,15 @@
-name: Filter CSV by price_brl
+name: Filter CSV from public by price_brl
 
 on:
   workflow_dispatch:
     inputs:
       csv_file:
-        description: 'File name inside public/ (e.g. aggregate.csv)'
-        required: true
-        default: 'aggregate.csv'
+        description: >
+          Nome do arquivo dentro da pasta public/ (ex: aggregate.csv).
+          Se deixar em branco, o workflow só vai listar os arquivos disponíveis.
+        required: false
       max_price_brl:
-        description: 'Max price_brl to keep (e.g. 400)'
+        description: 'Valor máximo de price_brl para manter (ex.: 400)'
         required: true
         default: '400'
 
@@ -26,16 +27,44 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
+      - name: Listar arquivos na pasta public/
+        run: |
+          echo "Arquivos encontrados na pasta public/:"
+          if [ -d "public" ]; then
+            ls -1 public || true
+          else
+            echo "⚠️ A pasta public/ não existe."
+          fi
+
+      # Se nenhum arquivo foi informado, apenas lista e encerra
+      - name: Verificar se o usuário informou csv_file
+        if: ${{ !inputs.csv_file }}
+        run: |
+          echo "❌ Você não informou o nome do arquivo (csv_file)."
+          echo "✅ Veja acima a lista de arquivos em public/ e rode o workflow novamente informando um deles."
+          exit 1
+
+      - name: Validar se o arquivo existe em public/
+        run: |
+          FILE_PATH="public/${{ inputs.csv_file }}"
+          if [ ! -f "$FILE_PATH" ]; then
+            echo "❌ Arquivo '$FILE_PATH' não encontrado."
+            echo "Arquivos disponíveis em public/:"
+            ls -1 public || true
+            exit 1
+          fi
+          echo "✅ Arquivo encontrado: $FILE_PATH"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Run price filter
+      - name: Rodar filtro de preço (filter-by-price.js)
         run: |
           node filter-by-price.js "${{ inputs.csv_file }}" "${{ inputs.max_price_brl }}"
 
-      - name: Commit filtered file (resumo/)
+      - name: Commitar arquivo filtrado em resumo/
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -43,8 +72,8 @@ jobs:
           git add "resumo/${{ inputs.csv_file }}"
 
           if git diff --cached --quiet; then
-            echo "No changes to commit."
+            echo "Nenhuma mudança para commitar."
           else
-            git commit -m "Filter ${{ inputs.csv_file }} with price_brl <= ${{ inputs.max_price_brl }}"
+            git commit -m "Filtro por price_brl <= ${{ inputs.max_price_brl }} em ${{ inputs.csv_file }}"
             git push
           fi
