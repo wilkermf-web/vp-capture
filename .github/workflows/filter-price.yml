@@ -4,24 +4,20 @@ on:
   workflow_dispatch:
     inputs:
       csv_file:
-        description: >
-          Nome do arquivo dentro da pasta public/ (ex: aggregate.csv).
-          Se deixar em branco, o workflow só vai listar os arquivos disponíveis.
-        required: false
-      max_price_brl:
-        description: 'Valor máximo de price_brl para manter (ex.: 400)'
+        description: "Escolha o arquivo dentro de public/ (veja a lista no log)"
         required: true
-        default: '400'
-
-permissions:
-  contents: write
+        type: string
+      max_price:
+        description: "Preço máximo em BRL (ex: 400)"
+        required: true
+        type: string
 
 jobs:
   filter-price:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -29,51 +25,36 @@ jobs:
 
       - name: Listar arquivos na pasta public/
         run: |
-          echo "Arquivos encontrados na pasta public/:"
-          if [ -d "public" ]; then
-            ls -1 public || true
-          else
-            echo "⚠️ A pasta public/ não existe."
-          fi
+          echo "Arquivos disponíveis em public/:"
+          ls -1 public || echo "Nenhum arquivo encontrado em public/"
 
-      # Se nenhum arquivo foi informado, apenas lista e encerra
-      - name: Verificar se o usuário informou csv_file
-        if: ${{ !inputs.csv_file }}
+      - name: Verificar se o arquivo existe em public/
         run: |
-          echo "❌ Você não informou o nome do arquivo (csv_file)."
-          echo "✅ Veja acima a lista de arquivos em public/ e rode o workflow novamente informando um deles."
-          exit 1
-
-      - name: Validar se o arquivo existe em public/
-        run: |
-          FILE_PATH="public/${{ inputs.csv_file }}"
-          if [ ! -f "$FILE_PATH" ]; then
-            echo "❌ Arquivo '$FILE_PATH' não encontrado."
-            echo "Arquivos disponíveis em public/:"
-            ls -1 public || true
+          if [ ! -f "public/${{ inputs.csv_file }}" ]; then
+            echo "Arquivo public/${{ inputs.csv_file }} não existe."
             exit 1
           fi
-          echo "✅ Arquivo encontrado: $FILE_PATH"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
-      - name: Rodar filtro de preço (filter-by-price.js)
+      - name: Rodar filtro de preço (filter-by-price.cjs)
         run: |
-          node filter-by-price.js "${{ inputs.csv_file }}" "${{ inputs.max_price_brl }}"
+          node filter-by-price.cjs "public/${{ inputs.csv_file }}" "${{ inputs.max_price }}"
 
+      - name: Mostrar arquivos gerados em resumo/
+        run: |
+          echo "Arquivos na pasta resumo/:"
+          ls -1 resumo || echo "Nenhum arquivo gerado em resumo/"
+
+      # Opcional: commit automático do arquivo em resumo/
       - name: Commitar arquivo filtrado em resumo/
+        if: success()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git add "resumo/${{ inputs.csv_file }}"
-
-          if git diff --cached --quiet; then
-            echo "Nenhuma mudança para commitar."
-          else
-            git commit -m "Filtro por price_brl <= ${{ inputs.max_price_brl }} em ${{ inputs.csv_file }}"
-            git push
-          fi
+          git add resumo/${{ inputs.csv_file }}
+          git commit -m "Add filtered file resumo/${{ inputs.csv_file }} (max_price=${{ inputs.max_price }})" || echo "Nada para commitar"
+          git push || echo "Não foi possível dar push (sem permissões ou nada mudou)"
