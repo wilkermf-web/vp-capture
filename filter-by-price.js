@@ -2,66 +2,79 @@
 const fs = require('fs');
 const path = require('path');
 
-// Uso: node filter-by-price.cjs "public/ARQUIVO.csv" "400"
-const [, , inputPath, maxPriceArg] = process.argv;
-
-if (!inputPath || !maxPriceArg) {
-  console.error('Uso: node filter-by-price.cjs "public/ARQUIVO.csv" "400"');
+if (process.argv.length < 4) {
+  console.error('Uso: node filter-by-price.cjs <arquivo.csv> <preco_maximo>');
   process.exit(1);
 }
 
-const maxPrice = parseFloat(
-  String(maxPriceArg).replace('R$', '').replace('.', '').replace(',', '.')
-);
+const inputPath = process.argv[2];
+const maxPrice = parseFloat(process.argv[3]);
 
-if (Number.isNaN(maxPrice)) {
-  console.error('Preço máximo inválido:', maxPriceArg);
+if (isNaN(maxPrice)) {
+  console.error('Preço máximo inválido:', process.argv[3]);
   process.exit(1);
 }
 
-// Lê o arquivo de entrada
-const csvText = fs.readFileSync(inputPath, 'utf8').trim();
-
-// Descobre o delimitador a partir do cabeçalho
-const [headerLine, ...dataLines] = csvText.split('\n');
-const delimiter = headerLine.includes(';') ? ';' : ',';
-
-// Normaliza cabeçalho e acha a coluna "price_brl"
-const headerCols = headerLine.split(delimiter).map(c => c.replace(/"/g, '').trim());
-const priceIndex = headerCols.findIndex(c => c.toLowerCase() === 'price_brl');
-
-if (priceIndex === -1) {
-  console.error('Coluna "price_brl" não encontrada no cabeçalho.');
+// Garante que o arquivo existe
+if (!fs.existsSync(inputPath)) {
+  console.error('Arquivo não encontrado:', inputPath);
   process.exit(1);
 }
 
-// Filtra linhas pelo preço
-const filteredLines = [headerLine];
+const csv = fs.readFileSync(inputPath, 'utf8');
 
-for (const line of dataLines) {
-  if (!line.trim()) continue;
+// Detecta separador , ou ;
+const sep = csv.includes(';') ? ';' : ',';
 
-  const cols = line.split(delimiter);
-  const rawPrice = cols[priceIndex].replace(/"/g, '').trim();
+// Quebra em linhas
+const lines = csv.trim().split(/\r?\n/);
+if (lines.length === 0) {
+  console.error('Arquivo CSV vazio.');
+  process.exit(1);
+}
 
-  const price = parseFloat(
-    rawPrice.replace('R$', '').replace('.', '').replace(',', '.')
-  );
+// Cabeçalho
+const header = lines[0].split(sep).map(h => h.replace(/"/g, '').trim());
 
-  if (!Number.isNaN(price) && price <= maxPrice) {
-    filteredLines.push(line);
+// Tenta achar as colunas "date" e "price_brl"
+const dateIdx = header.findIndex(h => h.toLowerCase() === 'date');
+const priceIdx = header.findIndex(h => h.toLowerCase() === 'price_brl');
+
+if (dateIdx === -1 || priceIdx === -1) {
+  console.error('CSV precisa ter colunas "date" e "price_brl". Cabeçalho encontrado:', header);
+  process.exit(1);
+}
+
+// Filtra linhas
+const outLines = [lines[0]]; // mantém o cabeçalho
+
+for (let i = 1; i < lines.length; i++) {
+  const line = lines[i].trim();
+  if (!line) continue;
+
+  const cols = line.split(sep);
+  const rawPrice = cols[priceIdx].replace(/"/g, '').trim();
+
+  if (!rawPrice) continue;
+
+  const price = parseFloat(rawPrice.replace(',', '.'));
+  if (isNaN(price)) continue;
+
+  if (price <= maxPrice) {
+    outLines.push(line);
   }
 }
 
-// Garante pasta resumo/ e salva com MESMO NOME do arquivo original
-const baseName = path.basename(inputPath);          // ex: 2025-11-13_BSB-IGU.csv
-const resumoDir = path.join(process.cwd(), 'resumo');
-
+// Garante pasta resumo/
+const resumoDir = path.join('resumo');
 if (!fs.existsSync(resumoDir)) {
   fs.mkdirSync(resumoDir, { recursive: true });
 }
 
+// Gera nome de saída: mesmo nome do arquivo original dentro de resumo/
+const baseName = path.basename(inputPath);
 const outputPath = path.join(resumoDir, baseName);
-fs.writeFileSync(outputPath, filteredLines.join('\n') + '\n', 'utf8');
 
-console.log('Arquivo filtrado criado em:', outputPath);
+fs.writeFileSync(outputPath, outLines.join('\n'), 'utf8');
+
+console.log(`Arquivo filtrado salvo em: ${outputPath}`);
