@@ -1,99 +1,67 @@
+// filter-by-price.cjs
 const fs = require('fs');
 const path = require('path');
 
-// Uso: node filter-by-price.js NOME_DO_ARQUIVO.csv 400
-const [, , inputFileName, thresholdStr] = process.argv;
+// Uso: node filter-by-price.cjs "public/ARQUIVO.csv" "400"
+const [, , inputPath, maxPriceArg] = process.argv;
 
-if (!inputFileName || !thresholdStr) {
-  console.error('Uso: node filter-by-price.js NOME_ARQUIVO.csv VALOR_LIMITE');
-  console.error('Exemplo: node filter-by-price.js aggregate.csv 400');
+if (!inputPath || !maxPriceArg) {
+  console.error('Uso: node filter-by-price.cjs "public/ARQUIVO.csv" "400"');
   process.exit(1);
 }
 
-// Converte "400" ou "400,00" para número
-const threshold = parseFloat(
-  thresholdStr.toString().replace('.', '').replace(',', '.')
+const maxPrice = parseFloat(
+  String(maxPriceArg).replace('R$', '').replace('.', '').replace(',', '.')
 );
 
-if (isNaN(threshold)) {
-  console.error('Valor de limite inválido:', thresholdStr);
+if (Number.isNaN(maxPrice)) {
+  console.error('Preço máximo inválido:', maxPriceArg);
   process.exit(1);
 }
 
-const publicDir = path.join(__dirname, 'public');
-const resumoDir = path.join(__dirname, 'resumo');
+// Lê o arquivo de entrada
+const csvText = fs.readFileSync(inputPath, 'utf8').trim();
 
-const inputPath = path.join(publicDir, inputFileName);
-const outputPath = path.join(resumoDir, inputFileName); // mesmo nome do arquivo
+// Descobre o delimitador a partir do cabeçalho
+const [headerLine, ...dataLines] = csvText.split('\n');
+const delimiter = headerLine.includes(';') ? ';' : ',';
 
-if (!fs.existsSync(inputPath)) {
-  console.error('Arquivo não encontrado na pasta public:', inputPath);
+// Normaliza cabeçalho e acha a coluna "price_brl"
+const headerCols = headerLine.split(delimiter).map(c => c.replace(/"/g, '').trim());
+const priceIndex = headerCols.findIndex(c => c.toLowerCase() === 'price_brl');
+
+if (priceIndex === -1) {
+  console.error('Coluna "price_brl" não encontrada no cabeçalho.');
   process.exit(1);
 }
 
-// Garante que a pasta resumo existe
+// Filtra linhas pelo preço
+const filteredLines = [headerLine];
+
+for (const line of dataLines) {
+  if (!line.trim()) continue;
+
+  const cols = line.split(delimiter);
+  const rawPrice = cols[priceIndex].replace(/"/g, '').trim();
+
+  const price = parseFloat(
+    rawPrice.replace('R$', '').replace('.', '').replace(',', '.')
+  );
+
+  if (!Number.isNaN(price) && price <= maxPrice) {
+    filteredLines.push(line);
+  }
+}
+
+// Garante pasta resumo/ e salva com MESMO NOME do arquivo original
+const baseName = path.basename(inputPath);          // ex: 2025-11-13_BSB-IGU.csv
+const resumoDir = path.join(process.cwd(), 'resumo');
+
 if (!fs.existsSync(resumoDir)) {
   fs.mkdirSync(resumoDir, { recursive: true });
 }
 
-const raw = fs.readFileSync(inputPath, 'utf8').trim();
-if (!raw) {
-  console.error('Arquivo está vazio:', inputPath);
-  process.exit(1);
-}
+const outputPath = path.join(resumoDir, baseName);
+fs.writeFileSync(outputPath, filteredLines.join('\n') + '\n', 'utf8');
 
-const lines = raw.split(/\r?\n/);
-const header = lines[0];
-
-// Detecta separador: ; ou ,
-let sep = ',';
-const countSemicolon = (header.match(/;/g) || []).length;
-const countComma = (header.match(/,/g) || []).length;
-if (countSemicolon > countComma) sep = ';';
-
-function cleanColName(col) {
-  return col.replace(/"/g, '').trim().toLowerCase();
-}
-
-const headerCols = header.split(sep);
-const priceIndex = headerCols.findIndex(col =>
-  cleanColName(col).includes('price')
-);
-
-if (priceIndex === -1) {
-  console.error('Não encontrei coluna de preço (ex: "price_brl") no header.');
-  process.exit(1);
-}
-
-const outputLines = [header];
-let kept = 0;
-let skipped = 0;
-
-for (let i = 1; i < lines.length; i++) {
-  const line = lines[i];
-  if (!line.trim()) continue;
-
-  const cols = line.split(sep);
-  let priceRaw = (cols[priceIndex] || '').toString();
-
-  priceRaw = priceRaw.replace(/"/g, '').trim();
-  // troca vírgula decimal por ponto, remove separador de milhar
-  priceRaw = priceRaw.replace(/\./g, '').replace(',', '.');
-
-  const price = parseFloat(priceRaw);
-
-  if (!isNaN(price) && price <= threshold) {
-    outputLines.push(line);
-    kept++;
-  } else {
-    skipped++;
-  }
-}
-
-fs.writeFileSync(outputPath, outputLines.join('\n'), 'utf8');
-
-console.log('Arquivo de entrada :', inputPath);
-console.log('Arquivo de saída   :', outputPath);
-console.log('Limite de preço    :', threshold);
-console.log('Linhas mantidas    :', kept);
-console.log('Linhas descartadas :', skipped);
+console.log('Arquivo filtrado criado em:', outputPath);
