@@ -34,7 +34,7 @@ jobs:
         env:
           ROUTE_FROM: ${{ github.event.inputs.from }}
           ROUTE_TO:   ${{ github.event.inputs.to }}
-          TZ: America/Sao_Paulo  # "hoje" no fuso BR
+          TZ: America/Sao_Paulo
         run: |
           node - <<'NODE'
           const fs = require('fs');
@@ -49,7 +49,7 @@ jobs:
               for(const ent of fs.readdirSync(d, { withFileTypes:true })){
                 const full = path.join(d, ent.name);
                 if(ent.isDirectory()) walk(full);
-                else if(ent.isFile() && ent.name === 'results.csv') out.push(full);
+                else if(ent.isFile() && ent.name.toLowerCase() === 'results.csv') out.push(full);
               }
             }
             walk(root);
@@ -57,35 +57,40 @@ jobs:
             return out;
           }
 
-          // parser ; com aspas opcionais
-          function parseCSVSemi(text){
-            const lines = text.trim().split(/\r?\n/).filter(Boolean);
-            const splitSemi = (line) => {
-              const out=[]; let cur=''; let inQ=false;
-              for (let i=0;i<line.length;i++){
-                const ch=line[i];
-                if (ch === '"'){
-                  if (inQ && line[i+1] === '"'){ cur+='"'; i++; }
-                  else inQ = !inQ;
-                } else if (ch === ';' && !inQ){
-                  out.push(cur); cur='';
-                } else {
-                  cur += ch;
-                }
+          // Detecta separador na 1ª linha (prioriza ;), suporta aspas opcionais
+          function splitSmart(line, sepHint){
+            const sep = sepHint || (line.includes(';') ? ';' : ',');
+            const out=[]; let cur=''; let inQ=false;
+            for (let i=0;i<line.length;i++){
+              const ch=line[i];
+              if (ch === '"'){
+                if (inQ && line[i+1] === '"'){ cur+='"'; i++; }
+                else inQ = !inQ;
+              } else if (ch === sep && !inQ){
+                out.push(cur); cur='';
+              } else {
+                cur += ch;
               }
-              out.push(cur);
-              return out.map(s=>s.trim());
-            };
-            if(!lines.length) return { header:[], rows:[] };
-            const header = splitSemi(lines[0]).map(h=>String(h).trim().toLowerCase());
-            const rows = lines.slice(1)
-              .map(splitSemi)
-              .filter(arr=>arr.length===header.length)
-              .map(arr=>Object.fromEntries(header.map((h,i)=>[h, arr[i]])));
+            }
+            out.push(cur);
+            return out.map(s=>s.trim());
+          }
+
+          function parseCSV(text){
+            const lines = text.split(/\r?\n/).filter(l=>l.trim().length>0);
+            if(!lines.length) return {header:[], rows:[]};
+            const headerRaw = lines[0];
+            const sep = headerRaw.includes(';') ? ';' : (headerRaw.includes(',') ? ',' : ';');
+            const header = splitSmart(headerRaw, sep).map(h=>String(h).trim().toLowerCase());
+            const rows = lines.slice(1).map(l => {
+              const arr = splitSmart(l, sep);
+              if (arr.length !== header.length) return null;
+              const obj = Object.fromEntries(header.map((h,i)=>[h, arr[i]]));
+              return obj;
+            }).filter(Boolean);
             return { header, rows };
           }
 
-          // normaliza 1.234,56 | 1,234.56 | 1234.56
           function normalizePrice(v){
             if(v==null) return null;
             let s = String(v).trim().replace(/[^\d.,-]/g, '');
@@ -110,51 +115,68 @@ jobs:
             return `${bag.year}-${bag.month}-${bag.day}`;
           }
 
-          const FROM = (process.env.ROUTE_FROM || 'GYN').toUpperCase();
-          const TO   = (process.env.ROUTE_TO   || 'CAC').toUpperCase();
+          const FROM = (process.env.ROUTE_FROM||'GYN').toUpperCase().trim().replace(/\s+/g,'');
+          const TO   = (process.env.ROUTE_TO||'CAC').toUpperCase().trim().replace(/\s+/g,'');
           const ROUTE = `${FROM}-${TO}`;
 
           const all = listResultsFiles('data');
-          // filtra apenas pastas que contenham _FROM-TO no caminho
-          const files = all.filter(fp =>
-            fp.includes(`_${ROUTE}${path.sep}`) || fp.includes(`_${ROUTE}/`) || fp.includes(`_${ROUTE}\\`)
-          );
+          const norm = s => s.replace(/\\/g,'/').toUpperCase();
+          const re = new RegExp(`_${FROM}\\s*-\\s*${TO}(/|_)`); // aceita espaços ao redor do hífen
+          const filesRoute = all.filter(fp => re.test(norm(fp)));
+
+          const files = filesRoute.length ? filesRoute : all; // fallback para "todos"
+          console.log(`[snapshot] results.csv encontrados: total=${all.length} | rota=${filesRoute.length}`);
 
           const byDate = new Map(); // date -> [prices]
+
+          function push(map, date, price){
+            if(!date || price==null) return;
+            if(!map.has(date)) map.set(date, []);
+            map.get(date).push(price);
+          }
 
           for(const fp of files){
             try{
               const txt = fs.readFileSync(fp,'utf8');
-              const { rows } = parseCSVSemi(txt);
+              const { rows } = parseCSV(txt);
               for(const r of rows){
-                const date = (r.date || '').trim();
-                const price = normalizePrice(r.price_brl);
-                if(!date || price==null) continue;
-                if(!byDate.has(date)) byDate.set(date, []);
-                byDate.get(date).push(price);
+                const bag = Object.fromEntries(Object.entries(r).map(([k,v])=>[k.toLowerCase(), v]));
+                const date = (bag.date || '').trim();
+                const priceRaw = bag.price_brl ?? bag['price brl'] ?? bag.price ?? bag.preco_brl ?? bag.valor_brl ?? bag.valor;
+                const price = normalizePrice(priceRaw);
+                push(byDate, date, price);
               }
             }catch(e){
               console.error('Falhou em', fp, e.message);
             }
           }
 
-          // dedup + ordena preços por dia
-          const dates = Array.from(byDate.keys()).sort();
+          const dates = Array.from(byDate.keys()).filter(Boolean).sort();
           for(const d of dates){
             byDate.set(d, Array.from(new Set(byDate.get(d))).sort((a,b)=>a-b));
           }
 
           ensureDir('public');
           const lines = ['"date";"price_brl"'];
+          let count = 0;
           for(let i=0;i<dates.length;i++){
             const d = dates[i];
-            for(const p of byDate.get(d)) lines.push(`"${d}";"${p.toFixed(2)}"`);
+            for(const p of byDate.get(d)){
+              lines.push(`"${d}";"${p.toFixed(2)}"`);
+              count++;
+            }
             if(i<dates.length-1) lines.push('');
           }
 
           const snapshot = `${todayStr()}_${ROUTE}.csv`;
-          fs.writeFileSync(path.join('public', snapshot), lines.join('\n')+'\n', 'utf8');
-          console.log(`[snapshot] criado public/${snapshot} | dias=${dates.length} | linhas=${lines.length}`);
+          const safeName = snapshot.replace(/\s+/g,''); // remove espaços do nome
+          fs.writeFileSync(path.join('public', safeName), lines.join('\n')+'\n', 'utf8');
+          console.log(`[snapshot] criado public/${safeName} | dias=${dates.length} | linhas=${count}`);
+
+          if (count === 0){
+            console.error('Nenhuma linha gerada. Verifique se há data/…/results.csv com colunas date e price_brl.');
+            process.exit(1);
+          }
           NODE
 
       - name: Commit & push snapshot (se mudou)
@@ -166,6 +188,10 @@ jobs:
           if git diff --cached --quiet; then
             echo "Sem mudanças para commitar."
           else
-            git commit -m "snapshot: ${{ github.event.inputs.from }}-${{ github.event.inputs.to }} (apenas arquivo do dia)"
+            git commit -m "snapshot: ${{
+              github.event.inputs.from
+            }}-${{
+              github.event.inputs.to
+            }} (apenas arquivo do dia)"
             git push
           fi
